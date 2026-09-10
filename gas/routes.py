@@ -19,7 +19,8 @@ from .audit import (
     log_operation,
 )
 from .diff import calculate_diff, calculate_source_hash
-from .projects import create_project, get_project, list_projects, update_project
+from .projects import create_project, get_project, list_projects, set_readme, update_project
+from .readme_gen import generate_readme
 from .releases import (
     NoChangesToReleaseError,
     ReleaseNotFoundError,
@@ -95,6 +96,15 @@ def post_project(project: ProjectCreate, actor: str = Depends(require_role("admi
     """GASプロジェクトを登録する（Admin限定）。"""
     created = create_project(project.model_dump())
     log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")
+    try:
+        source_files = fetch_source_files(created["script_id"], get_credentials())
+        _try_generate_and_save_readme(
+            project_id=created["id"],
+            project_name=created["project_name"],
+            source_files=source_files,
+        )
+    except Exception:
+        pass
     return created
 
 
@@ -217,7 +227,21 @@ def post_savepoint(project_id: str, savepoint: SavepointCreate, actor: str = Dep
         comment=savepoint.comment,
         created_by=savepoint.created_by,
     )
+    _try_generate_and_save_readme(
+        project_id=project_id,
+        project_name=project["project_name"],
+        source_files=source_files,
+    )
     return {"ok": True, "savepoint": created}
+
+
+def _try_generate_and_save_readme(project_id: str, project_name: str, source_files: list[dict[str, Any]]) -> None:
+    """README生成と保存をベストエフォートで実行する。"""
+    try:
+        readme_markdown = generate_readme(project_name, source_files)
+        set_readme(project_id, readme_markdown)
+    except Exception:
+        pass
 
 
 @router.get("/projects/{project_id}/savepoints")

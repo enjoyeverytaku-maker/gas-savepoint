@@ -65,6 +65,16 @@ def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, Any] |
     return serialize_project(doc_ref.get())
 
 
+def set_readme(project_id: str, readme_markdown: str) -> None:
+    """AI生成READMEをプロジェクト文書へ保存する。"""
+    db().collection(COLLECTION).document(project_id).update(
+        {
+            "readme_markdown": readme_markdown,
+            "readme_generated_at": SERVER_TIMESTAMP,
+        }
+    )
+
+
 def serialize_project(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
     """Firestoreのプロジェクト文書をAPI用に整形する。"""
     data = snapshot.to_dict() or {}
