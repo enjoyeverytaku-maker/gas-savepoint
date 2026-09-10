@@ -11,6 +11,7 @@ multiuser_oauth.pyにあった複数組織選択ロジックは持ち込まな�
      （シークレットID: savepoint-oauth-client-id / savepoint-oauth-client-secret）
 """
 import os
+from urllib.parse import parse_qs, urlparse
 
 import requests
 from google.auth.transport.requests import Request
@@ -35,7 +36,7 @@ _CONNECTION_DOC = ("google_account", "connection")
 
 
 def _db() -> firestore.Client:
-    return firestore.Client()
+    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
 
 
 def _client_config() -> dict:
@@ -53,20 +54,36 @@ def _client_config() -> dict:
 
 
 def build_auth_url() -> str:
-    """OAuth同意画面へのリダイレクト先URLを生成する。"""
+    """OAuth同意画面へのリダイレクト先URLを生成する。
+
+    /oauth/connectと/oauth/callbackは別々のHTTPリクエスト（別Flowインスタンス）になるため、
+    PKCEのcode_verifierをFirestoreへ一時保存し、stateをキーにcallback側で復元する。
+    """
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=OAUTH_REDIRECT_URI)
-    auth_url, _ = flow.authorization_url(
+    auth_url, state = flow.authorization_url(
         access_type="offline",
         prompt="consent",
         include_granted_scopes="true",
+    )
+    _db().collection("oauth_flow_state").document(state).set(
+        {"code_verifier": flow.code_verifier, "created_at": firestore.SERVER_TIMESTAMP}
     )
     return auth_url
 
 
 def handle_callback(authorization_response_url: str) -> dict:
     """認可コードをトークンへ交換し、Refresh TokenをSecret Managerへ保存する。"""
+    query = parse_qs(urlparse(authorization_response_url).query)
+    state = query.get("state", [None])[0]
+    state_ref = _db().collection("oauth_flow_state").document(state) if state else None
+    state_doc = state_ref.get() if state_ref else None
+    if not state_doc or not state_doc.exists:
+        raise RuntimeError("OAuthのstateが見つかりませんでした。/oauth/connectからやり直してください")
+
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=OAUTH_REDIRECT_URI)
+    flow.code_verifier = state_doc.to_dict()["code_verifier"]
     flow.fetch_token(authorization_response=authorization_response_url)
+    state_ref.delete()
     creds = flow.credentials
 
     if not creds.refresh_token:

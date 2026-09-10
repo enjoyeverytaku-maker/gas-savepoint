@@ -12,6 +12,7 @@ GAS（Google Apps Script）を業務利用する非エンジニア企業向け�
 pip install -r requirements.txt
 export GCP_PROJECT=<デプロイ先のGCPプロジェクトID>
 export OAUTH_REDIRECT_URI=http://localhost:8080/oauth/callback  # 本番はCloud RunのURLに変更
+export OAUTHLIB_INSECURE_TRANSPORT=1  # ローカル(http://localhost)のみ。google-auth-oauthlibはデフォルトでHTTPS必須のため。本番(Cloud Run=https)では絶対に設定しない
 uvicorn main:app --reload
 ```
 
