@@ -53,6 +53,14 @@ def get_latest_savepoint(project_id: str) -> dict[str, Any] | None:
     return savepoints[0] if savepoints else None
 
 
+def get_savepoint_by_version(project_id: str, version_no: int) -> dict[str, Any] | None:
+    """指定バージョン番号のセーブポイントを取得する（ロールバック対象の特定に使う）。"""
+    for savepoint in list_savepoints(project_id):
+        if savepoint.get("version_no") == version_no:
+            return savepoint
+    return None
+
+
 def _next_version_no(project_id: str, client: firestore.Client) -> int:
     """指定プロジェクトの次のバージョン番号を採番する。"""
     query = client.collection(COLLECTION).where("project_id", "==", project_id)

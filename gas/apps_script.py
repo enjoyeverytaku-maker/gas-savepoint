@@ -46,6 +46,32 @@ def fetch_source_files(script_id: str, creds: Credentials) -> list[dict[str, str
     ]
 
 
+def update_content(script_id: str, source_files: list[dict[str, str]], creds: Credentials) -> None:
+    """Apps Script APIでGAS本体のソースを全体置換する（ロールバック専用）。
+
+    updateContentは差分パッチではなく全体置換のため、呼び出し側で必ず
+    ロールバック前の自動バックアップ・楽観ロックを行うこと（gas/rollback.py参照）。
+    """
+    response = requests.put(
+        APPS_SCRIPT_CONTENT_URL.format(script_id=script_id),
+        headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+        json={
+            "files": [
+                {"name": f["name"], "type": f["type"], "source": f["source"]}
+                for f in source_files
+            ]
+        },
+        timeout=30,
+    )
+
+    if not response.ok:
+        raise AppsScriptAPIError(
+            status_code=response.status_code,
+            message=_extract_error_message(response),
+            details=_safe_json(response),
+        )
+
+
 def _extract_error_message(response: requests.Response) -> str:
     """APIレスポンスからエラーメッセージを取り出す。"""
     payload = _safe_json(response)
