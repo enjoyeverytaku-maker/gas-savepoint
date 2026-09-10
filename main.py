@@ -19,6 +19,23 @@ from auth.users import (
 from gas.audit import ACTION_LOGIN, log_operation
 from gas.routes import router as gas_router
 
+def _refuse_dev_mode_on_cloud_run() -> None:
+    """Cloud Run上（K_SERVICEが必ず設定される）で開発専用の抜け穴が有効なら起動を拒否する（spec.md §14）。
+
+    SAVEPOINT_DEV_MODEはRBAC（auth/users.py）のX-Debug-User-Emailヘッダーを信頼してしまう
+    抜け穴、OAUTHLIB_INSECURE_TRANSPORTはOAuthのHTTPS必須チェックを無効化する抜け穴で、
+    いずれもローカル開発専用。本番でのデプロイミスによる有効化を起動時に強制的に防ぐ。
+    """
+    if not os.environ.get("K_SERVICE"):
+        return
+    if os.environ.get("SAVEPOINT_DEV_MODE") == "1":
+        raise RuntimeError("SAVEPOINT_DEV_MODE must not be enabled on Cloud Run (K_SERVICE is set)")
+    if os.environ.get("OAUTHLIB_INSECURE_TRANSPORT") == "1":
+        raise RuntimeError("OAUTHLIB_INSECURE_TRANSPORT must not be enabled on Cloud Run (K_SERVICE is set)")
+
+
+_refuse_dev_mode_on_cloud_run()
+
 app = FastAPI(title="SavePoint")
 app.include_router(gas_router)
 

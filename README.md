@@ -76,6 +76,30 @@ gcloud scheduler jobs create http savepoint-sync-check \
   --headers="X-Scheduler-Token=<savepoint-scheduler-tokenの値>"
 ```
 
+## AI README自動生成（F12、Gemini API）
+
+GASプロジェクト登録時・セーブポイント作成時に、Gemini APIでコード内容からREADMEを
+ベストエフォートで自動生成する（失敗してもプロジェクト登録・セーブポイント作成自体は
+必ず成功する）。
+
+```bash
+# Google AI StudioなどでGemini APIキーを取得し、Secret Managerへ登録
+echo -n "<Gemini APIキー>" | gcloud secrets create savepoint-gemini-api-key --data-file=- --project=$GCP_PROJECT
+```
+
+未発行のままでも動作するが（README列は「未生成」のまま）、実際に生成させるにはこのシークレットが必須。
+
+## セキュリティ（spec.md §14）
+
+- 秘密情報（OAuth Client Secret・Refresh Token・Cloud Scheduler用トークン・Gemini APIキー）は
+  すべてSecret Manager経由（`auth/secrets.py`）で管理し、コードやFirestoreへ平文保存しない
+- HTTPSはCloud Run標準機能を利用する（アプリ側での追加実装は不要）
+- `SAVEPOINT_DEV_MODE` / `OAUTHLIB_INSECURE_TRANSPORT` はローカル開発専用の抜け穴。
+  Cloud Run上（`K_SERVICE` 環境変数が常に設定される）でこれらが有効な場合、
+  `main.py` が起動時に `RuntimeError` を送出してアプリの起動を拒否する
+  （デプロイ時の設定ミスで本番にローカル用の抜け穴が漏れ出ることを防ぐ安全装置、2026-09-10追加）
+- git履歴・コード全体に秘密情報のハードコードが無いことを確認済み（2026-09-10監査）
+
 ## デプロイ
 
 ```bash
