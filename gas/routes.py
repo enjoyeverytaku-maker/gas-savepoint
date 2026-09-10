@@ -12,6 +12,15 @@ from auth.oauth import get_credentials
 from .apps_script import AppsScriptAPIError, fetch_source_files
 from .diff import calculate_diff, calculate_source_hash
 from .projects import create_project, get_project, list_projects
+from .releases import (
+    NoChangesToReleaseError,
+    ReleaseNotFoundError,
+    ReleaseNotPendingError,
+    approve_release,
+    create_release,
+    list_releases,
+    reject_release,
+)
 from .rollback import RollbackConflictError, RollbackTargetNotFoundError, rollback_to_version
 from .savepoints import create_savepoint, get_latest_savepoint, list_savepoints
 
@@ -46,6 +55,20 @@ class RollbackRequest(BaseModel):
         default=None,
         description="クライアントが把握している現在の状態のハッシュ。楽観ロックに使用（省略も可だが推奨）",
     )
+
+
+class ReleaseCreate(BaseModel):
+    """リリース申請リクエスト。"""
+
+    requested_by: str = Field(default="unknown")
+    comment: str = ""
+
+
+class ReleaseDecision(BaseModel):
+    """リリース承認・却下リクエスト。"""
+
+    performed_by: str = Field(default="unknown")
+    reason: str = ""
 
 
 @router.post("/projects")
@@ -165,6 +188,103 @@ def get_savepoints(project_id: str):
     if project is None:
         return JSONResponse(status_code=404, content={"error": "project not found"})
     return list_savepoints(project_id)
+
+
+@router.post("/projects/{project_id}/releases")
+def post_release(project_id: str, body: ReleaseCreate):
+    """GASソースを取得してリリース申請を作成する。"""
+    try:
+        release = create_release(
+            project_id=project_id,
+            requested_by=body.requested_by,
+            comment=body.comment,
+        )
+    except ReleaseNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
+    except NoChangesToReleaseError as exc:
+        return JSONResponse(
+            status_code=200,
+            content={"ok": False, "error": {"type": "no_changes", "message": str(exc)}},
+        )
+    except AppsScriptAPIError as exc:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "ok": False,
+                "error": {
+                    "type": "apps_script_api_error",
+                    "status_code": exc.status_code,
+                    "message": exc.message,
+                    "details": exc.details,
+                },
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - 認証失敗もJSONで返すため広く捕捉
+        return JSONResponse(
+            status_code=200,
+            content={"ok": False, "error": {"type": "authentication_or_request_error", "message": str(exc)}},
+        )
+    return {"ok": True, "release": release}
+
+
+@router.get("/projects/{project_id}/releases")
+def get_project_releases(project_id: str):
+    """指定プロジェクトのリリース申請一覧を返す。"""
+    project = get_project(project_id)
+    if project is None:
+        return JSONResponse(
+            status_code=404,
+            content={"ok": False, "error": {"type": "not_found", "message": f"project not found: {project_id}"}},
+        )
+    return list_releases(project_id)
+
+
+@router.post("/releases/{release_id}/approve")
+def post_release_approve(release_id: str, body: ReleaseDecision):
+    """リリース申請を承認する。"""
+    try:
+        result = approve_release(release_id=release_id, approved_by=body.performed_by)
+    except ReleaseNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
+    except ReleaseNotPendingError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "ok": False,
+                "error": {
+                    "type": "already_decided",
+                    "message": exc.message,
+                    "current_status": exc.current_status,
+                },
+            },
+        )
+    return {"ok": True, **result}
+
+
+@router.post("/releases/{release_id}/reject")
+def post_release_reject(release_id: str, body: ReleaseDecision):
+    """リリース申請を却下する。"""
+    try:
+        release = reject_release(
+            release_id=release_id,
+            rejected_by=body.performed_by,
+            reason=body.reason,
+        )
+    except ReleaseNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
+    except ReleaseNotPendingError as exc:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "ok": False,
+                "error": {
+                    "type": "already_decided",
+                    "message": exc.message,
+                    "current_status": exc.current_status,
+                },
+            },
+        )
+    return {"ok": True, "release": release}
 
 
 @router.post("/projects/{project_id}/rollback")
