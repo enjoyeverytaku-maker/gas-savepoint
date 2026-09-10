@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from auth.oauth import get_credentials
+from auth.users import require_role
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
 from .diff import calculate_diff, calculate_source_hash
@@ -72,19 +73,19 @@ class ReleaseDecision(BaseModel):
 
 
 @router.post("/projects")
-def post_project(project: ProjectCreate) -> dict[str, Any]:
-    """GASプロジェクトを登録する。"""
+def post_project(project: ProjectCreate, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
+    """GASプロジェクトを登録する（Admin限定）。"""
     return create_project(project.model_dump())
 
 
 @router.get("/projects")
-def get_projects() -> list[dict[str, Any]]:
+def get_projects(actor: str = Depends(require_role("viewer"))) -> list[dict[str, Any]]:
     """GASプロジェクト一覧を返す。"""
     return list_projects()
 
 
 @router.get("/projects/{project_id}")
-def get_project_detail(project_id: str):
+def get_project_detail(project_id: str, actor: str = Depends(require_role("viewer"))):
     """GASプロジェクト詳細を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -93,7 +94,7 @@ def get_project_detail(project_id: str):
 
 
 @router.post("/projects/{project_id}/fetch")
-def fetch_project_source(project_id: str):
+def fetch_project_source(project_id: str, actor: str = Depends(require_role("viewer"))):
     """最新GASソースを取得して差分を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -139,8 +140,8 @@ def fetch_project_source(project_id: str):
 
 
 @router.post("/projects/{project_id}/savepoints")
-def post_savepoint(project_id: str, savepoint: SavepointCreate):
-    """GASソースを取得してセーブポイントを作成する。"""
+def post_savepoint(project_id: str, savepoint: SavepointCreate, actor: str = Depends(require_role("editor"))):
+    """GASソースを取得してセーブポイントを作成する（Editor以上）。"""
     project = get_project(project_id)
     if project is None:
         return JSONResponse(status_code=404, content={"error": "project not found"})
@@ -182,7 +183,7 @@ def post_savepoint(project_id: str, savepoint: SavepointCreate):
 
 
 @router.get("/projects/{project_id}/savepoints")
-def get_savepoints(project_id: str):
+def get_savepoints(project_id: str, actor: str = Depends(require_role("viewer"))):
     """指定プロジェクトのセーブポイント履歴を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -191,8 +192,8 @@ def get_savepoints(project_id: str):
 
 
 @router.post("/projects/{project_id}/releases")
-def post_release(project_id: str, body: ReleaseCreate):
-    """GASソースを取得してリリース申請を作成する。"""
+def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(require_role("editor"))):
+    """GASソースを取得してリリース申請を作成する（Editor以上）。"""
     try:
         release = create_release(
             project_id=project_id,
@@ -228,7 +229,7 @@ def post_release(project_id: str, body: ReleaseCreate):
 
 
 @router.get("/projects/{project_id}/releases")
-def get_project_releases(project_id: str):
+def get_project_releases(project_id: str, actor: str = Depends(require_role("viewer"))):
     """指定プロジェクトのリリース申請一覧を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -240,8 +241,8 @@ def get_project_releases(project_id: str):
 
 
 @router.post("/releases/{release_id}/approve")
-def post_release_approve(release_id: str, body: ReleaseDecision):
-    """リリース申請を承認する。"""
+def post_release_approve(release_id: str, body: ReleaseDecision, actor: str = Depends(require_role("admin"))):
+    """リリース申請を承認する（Admin限定）。"""
     try:
         result = approve_release(release_id=release_id, approved_by=body.performed_by)
     except ReleaseNotFoundError as exc:
@@ -262,8 +263,8 @@ def post_release_approve(release_id: str, body: ReleaseDecision):
 
 
 @router.post("/releases/{release_id}/reject")
-def post_release_reject(release_id: str, body: ReleaseDecision):
-    """リリース申請を却下する。"""
+def post_release_reject(release_id: str, body: ReleaseDecision, actor: str = Depends(require_role("admin"))):
+    """リリース申請を却下する（Admin限定）。"""
     try:
         release = reject_release(
             release_id=release_id,
@@ -288,8 +289,8 @@ def post_release_reject(release_id: str, body: ReleaseDecision):
 
 
 @router.post("/projects/{project_id}/rollback")
-def post_rollback(project_id: str, body: RollbackRequest):
-    """過去のセーブポイントへロールバックする（F4）。
+def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(require_role("editor"))):
+    """過去のセーブポイントへロールバックする（F4、Editor以上）。
 
     復元前に現在の状態を自動バックアップし、expected_current_hashが
     渡された場合は楽観ロックで同時編集を検知する。

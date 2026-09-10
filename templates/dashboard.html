@@ -197,6 +197,12 @@ const releasePanelEl = document.getElementById('releasePanel');
 const releaseListEl = document.getElementById('releaseList');
 
 let projectsById = {};
+let authHeaders = {};
+
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders };
+  return fetch(url, { ...options, headers });
+}
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -264,7 +270,7 @@ async function refreshProjectState(card, project) {
 
   let savepoints = [];
   try {
-    const res = await fetch(`/api/projects/${project.id}/savepoints`);
+    const res = await apiFetch(`/api/projects/${project.id}/savepoints`);
     savepoints = await res.json();
   } catch (e) {
     savepoints = [];
@@ -272,7 +278,7 @@ async function refreshProjectState(card, project) {
   const latest = savepoints[0];
   metaEl.textContent = `最終保存：${formatDate(latest ? latest.created_at : null)}`;
 
-  const fetchRes = await fetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
+  const fetchRes = await apiFetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
   const fetchData = await fetchRes.json();
 
   if (!fetchData.ok) {
@@ -326,7 +332,7 @@ function wireCardActions(card, project) {
     savepointBtn.disabled = true;
     savepointBtn.textContent = '保存中...';
     try {
-      const res = await fetch(`/api/projects/${project.id}/savepoints`, {
+      const res = await apiFetch(`/api/projects/${project.id}/savepoints`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comment, created_by: window.__savepointUser || 'unknown' }),
@@ -348,7 +354,7 @@ function wireCardActions(card, project) {
     releaseBtn.disabled = true;
     releaseBtn.textContent = '申請中...';
     try {
-      const res = await fetch(`/api/projects/${project.id}/releases`, {
+      const res = await apiFetch(`/api/projects/${project.id}/releases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ comment, requested_by: window.__savepointUser || 'unknown' }),
@@ -418,7 +424,7 @@ function wireReleaseItemActions(item, release) {
     approveBtn.disabled = true;
     rejectBtn.disabled = true;
     try {
-      const res = await fetch(`/api/releases/${release.id}/approve`, {
+      const res = await apiFetch(`/api/releases/${release.id}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown' }),
@@ -451,7 +457,7 @@ function wireReleaseItemActions(item, release) {
     approveBtn.disabled = true;
     rejectBtn.disabled = true;
     try {
-      const res = await fetch(`/api/releases/${release.id}/reject`, {
+      const res = await apiFetch(`/api/releases/${release.id}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown', reason }),
@@ -481,7 +487,7 @@ async function refreshReleasePanel() {
   }
   const lists = await Promise.all(projects.map(async (project) => {
     try {
-      const res = await fetch(`/api/projects/${project.id}/releases`);
+      const res = await apiFetch(`/api/projects/${project.id}/releases`);
       const data = await res.json();
       return Array.isArray(data) ? data.filter((r) => r.status === 'pending') : [];
     } catch (e) {
@@ -518,8 +524,11 @@ async function loadDashboard() {
   }
   accountInfoEl.textContent = status.email ? `接続中: ${status.email}` : '';
   window.__savepointUser = status.email || 'unknown';
+  if (status.dev_mode && status.email) {
+    authHeaders = { 'X-Debug-User-Email': status.email };
+  }
 
-  const projectsRes = await fetch('/api/projects');
+  const projectsRes = await apiFetch('/api/projects');
   const projects = await projectsRes.json();
 
   loadingEl.style.display = 'none';

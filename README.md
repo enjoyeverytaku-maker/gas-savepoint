@@ -31,6 +31,29 @@ echo -n "<クライアントシークレット>" | gcloud secrets create savepoi
 
 4. アプリを起動し `/oauth/connect` にアクセスすると同意画面へリダイレクトされ、許可後は自動的に `savepoint-oauth-refresh-token` シークレットへRefresh Tokenが保存される（`/api/oauth/status` で接続状態を確認できる）
 
+## 権限管理（RBAC、F6）
+
+SavePoint画面自体へのログイン認証は、本番ではCloud Run + IAP（Identity-Aware Proxy）が担う想定。
+IAPは認証済みユーザーのメールアドレスを `X-Goog-Authenticated-User-Email` ヘッダーでアプリへ渡すため、
+`auth/users.py` はそのヘッダーを信頼してユーザーを特定する（Cloud Run側でのIAP設定はT17のデプロイ時に別途行う）。
+
+`users` コレクションが1件も無い間（初回導入時）は、認証済みの誰でも `admin` 扱いになる（ブートストラップ）。
+**最初にやること**: 管理者が `POST /api/users` で自分自身を `admin` として登録する。それ以降、未登録のユーザーは
+安全側のデフォルトとして `viewer` 扱いになる。
+
+ロール: `admin`（ユーザー管理・GAS登録・承認/却下含む全操作） / `editor`（差分確認・セーブポイント・ロールバック・リリース申請） / `viewer`（閲覧のみ）。
+
+### ローカル開発時
+
+IAPが無いローカル環境では、`SAVEPOINT_DEV_MODE=1` を設定した場合のみ `X-Debug-User-Email` ヘッダーで
+ユーザーを指定できる（ダッシュボードもこのヘッダーを自動付与する）。**本番では絶対に設定しないこと**
+（`OAUTHLIB_INSECURE_TRANSPORT` と同種の開発専用の抜け穴）。
+
+```bash
+export SAVEPOINT_DEV_MODE=1  # ローカル開発のみ。本番では設定しない
+curl -X POST localhost:8080/api/users -H "X-Debug-User-Email: you@example.com" -H "Content-Type: application/json" -d '{"email":"you@example.com","role":"admin"}'
+```
+
 ## デプロイ
 
 ```bash
