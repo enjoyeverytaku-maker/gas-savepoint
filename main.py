@@ -37,6 +37,12 @@ def audit_log_page(request: Request):
     return templates.TemplateResponse(request, "audit_log.html")
 
 
+@app.get("/ledger")
+def ledger_page(request: Request):
+    """台帳画面（F8）。登録・編集の権限はAPI側（Admin限定）で強制する。"""
+    return templates.TemplateResponse(request, "ledger.html")
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

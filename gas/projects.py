@@ -51,6 +51,20 @@ def get_project(project_id: str) -> dict[str, Any] | None:
     return serialize_project(snapshot)
 
 
+EDITABLE_FIELDS = ("project_name", "google_account", "description", "status", "department")
+
+
+def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """GASプロジェクトの台帳項目を更新する（F8）。script_idは登録後は変更しない（別プロジェクトとして再登録する）。"""
+    doc_ref = db().collection(COLLECTION).document(project_id)
+    if not doc_ref.get().exists:
+        return None
+    payload = {key: value for key, value in updates.items() if key in EDITABLE_FIELDS and value is not None}
+    payload["updated_at"] = SERVER_TIMESTAMP
+    doc_ref.update(payload)
+    return serialize_project(doc_ref.get())
+
+
 def serialize_project(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
     """Firestoreのプロジェクト文書をAPI用に整形する。"""
     data = snapshot.to_dict() or {}

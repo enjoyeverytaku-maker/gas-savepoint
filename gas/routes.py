@@ -11,9 +11,15 @@ from auth.oauth import get_credentials
 from auth.users import require_role
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
-from .audit import ACTION_GAS_PROJECT_CREATE, ACTION_SOURCE_FETCH, list_operations, log_operation
+from .audit import (
+    ACTION_GAS_PROJECT_CREATE,
+    ACTION_GAS_PROJECT_UPDATE,
+    ACTION_SOURCE_FETCH,
+    list_operations,
+    log_operation,
+)
 from .diff import calculate_diff, calculate_source_hash
-from .projects import create_project, get_project, list_projects
+from .projects import create_project, get_project, list_projects, update_project
 from .releases import (
     NoChangesToReleaseError,
     ReleaseNotFoundError,
@@ -39,6 +45,16 @@ class ProjectCreate(BaseModel):
     description: str = ""
     status: str = ""
     department: str = ""
+
+
+class ProjectUpdate(BaseModel):
+    """台帳項目の更新リクエスト（F8）。指定したフィールドのみ更新する。"""
+
+    project_name: str | None = None
+    google_account: str | None = None
+    description: str | None = None
+    status: str | None = None
+    department: str | None = None
 
 
 class SavepointCreate(BaseModel):
@@ -85,6 +101,16 @@ def post_project(project: ProjectCreate, actor: str = Depends(require_role("admi
 def get_projects(actor: str = Depends(require_role("viewer"))) -> list[dict[str, Any]]:
     """GASプロジェクト一覧を返す。"""
     return list_projects()
+
+
+@router.patch("/projects/{project_id}")
+def patch_project(project_id: str, body: ProjectUpdate, actor: str = Depends(require_role("admin"))):
+    """台帳項目（用途・担当部署・ステータス等）を更新する（Admin限定、F8）。"""
+    updated = update_project(project_id, body.model_dump())
+    if updated is None:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"project not found: {project_id}"}})
+    log_operation(action=ACTION_GAS_PROJECT_UPDATE, project_id=project_id, user=actor, result="success")
+    return {"ok": True, "project": updated}
 
 
 @router.get("/projects/{project_id}")
