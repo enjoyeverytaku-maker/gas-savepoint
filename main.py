@@ -1,11 +1,22 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
 
 from auth import oauth
 from gas.routes import router as gas_router
 
 app = FastAPI(title="SavePoint")
 app.include_router(gas_router)
+
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+
+@app.get("/")
+def dashboard(request: Request):
+    """ダッシュボード画面（F10）。データはブラウザ側からJSON APIを呼んで描画する。"""
+    return templates.TemplateResponse(request, "dashboard.html")
 
 
 @app.get("/api/health")
@@ -30,4 +41,5 @@ def oauth_callback(request: Request):
 
 @app.get("/api/oauth/status")
 def oauth_status():
-    return {"connected": oauth.is_connected()}
+    connected = oauth.is_connected()
+    return {"connected": connected, "email": oauth.get_connected_email() if connected else None}

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SavePoint ダッシュボード</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f5f6f8;
+    --card-bg: #ffffff;
+    --border: #e0e3e8;
+    --text: #1f2430;
+    --muted: #6b7280;
+    --ok: #1a7f37;
+    --warn: #b7791f;
+    --error: #c0392b;
+    --accent: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    background: var(--card-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  .account-info { font-size: 13px; color: var(--muted); }
+  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .connect-banner {
+    background: #fff7e6;
+    border: 1px solid #f0c36d;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .connect-banner a {
+    display: inline-block;
+    margin-top: 8px;
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .summary .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+  }
+  .summary .card .num { font-size: 28px; font-weight: 700; }
+  .summary .card .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .summary .card.warn .num { color: var(--warn); }
+  .summary .card.error .num { color: var(--error); }
+  .project-list { display: flex; flex-direction: column; gap: 12px; }
+  .project-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+  }
+  .project-card .row1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .project-card .name { font-size: 16px; font-weight: 600; }
+  .project-card .script-id { font-size: 12px; color: var(--muted); }
+  .status-badge { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .status-badge.ok { color: var(--ok); }
+  .status-badge.warn { color: var(--warn); }
+  .status-badge.error { color: var(--error); }
+  .status-badge.loading { color: var(--muted); }
+  .project-card .meta {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .project-card .actions { margin-top: 10px; display: flex; gap: 8px; }
+  .project-card button {
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    cursor: pointer;
+  }
+  .project-card button:hover { background: #f0f2f5; }
+  .project-card button:disabled { opacity: 0.5; cursor: default; }
+  .diff-detail {
+    margin-top: 10px;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    font-size: 13px;
+    display: none;
+  }
+  .diff-detail.open { display: block; }
+  .diff-detail table { width: 100%; border-collapse: collapse; }
+  .diff-detail th, .diff-detail td {
+    text-align: left;
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .diff-detail .added { color: var(--ok); }
+  .diff-detail .deleted { color: var(--error); }
+  .empty, .loading-text { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+  .error-message { color: var(--error); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SavePoint ダッシュボード</h1>
+  <div class="account-info" id="accountInfo"></div>
+</header>
+<main>
+  <div id="connectBanner" class="connect-banner" style="display:none;">
+    Googleアカウントが未接続です。GASのソース取得・セーブポイント作成にはアカウント接続が必要です。
+    <br>
+    <a href="/oauth/connect">Googleアカウントを接続する</a>
+  </div>
+
+  <div class="summary" id="summary" style="display:none;">
+    <div class="card"><div class="num" id="sumTotal">0</div><div class="label">GAS Projects</div></div>
+    <div class="card warn"><div class="num" id="sumChanged">0</div><div class="label">変更あり</div></div>
+    <div class="card"><div class="num" id="sumUnchanged">0</div><div class="label">変更なし</div></div>
+    <div class="card error"><div class="num" id="sumError">0</div><div class="label">認証エラー</div></div>
+  </div>
+
+  <div id="projectList" class="project-list"></div>
+  <div id="loadingText" class="loading-text">読み込み中...</div>
+  <div id="emptyText" class="empty" style="display:none;">登録済みのGASプロジェクトがありません。</div>
+</main>
+
+<script>
+const listEl = document.getElementById('projectList');
+const loadingEl = document.getElementById('loadingText');
+const emptyEl = document.getElementById('emptyText');
+const summaryEl = document.getElementById('summary');
+const connectBannerEl = document.getElementById('connectBanner');
+const accountInfoEl = document.getElementById('accountInfo');
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function formatDate(iso) {
+  if (!iso) return '未保存';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderCard(project) {
+  const card = document.createElement('div');
+  card.className = 'project-card';
+  card.dataset.projectId = project.id;
+  card.innerHTML = `
+    <div class="row1">
+      <div>
+        <div class="name">${escapeHtml(project.project_name)}</div>
+        <div class="script-id">${escapeHtml(project.script_id)}</div>
+      </div>
+      <div class="status-badge loading" data-role="status">● 確認中...</div>
+    </div>
+    <div class="meta" data-role="meta">最終保存：確認中...</div>
+    <div class="error-message" data-role="error" style="display:none;"></div>
+    <div class="actions">
+      <button type="button" data-role="diff-toggle" disabled>差分を見る</button>
+      <button type="button" data-role="savepoint" disabled>セーブポイント</button>
+    </div>
+    <div class="diff-detail" data-role="diff-detail"></div>
+  `;
+  return card;
+}
+
+function renderDiffTable(diff) {
+  if (!diff || diff.length === 0) {
+    return '<div>変更はありません。</div>';
+  }
+  const rows = diff.map((f) => `
+    <tr>
+      <td>${escapeHtml(f.name)}</td>
+      <td>${escapeHtml(f.status)}</td>
+      <td class="added">+${f.added_lines}</td>
+      <td class="deleted">-${f.deleted_lines}</td>
+    </tr>
+  `).join('');
+  return `<table><thead><tr><th>ファイル</th><th>状態</th><th>追加</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function refreshProjectState(card, project) {
+  const statusEl = card.querySelector('[data-role="status"]');
+  const metaEl = card.querySelector('[data-role="meta"]');
+  const errorEl = card.querySelector('[data-role="error"]');
+  const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
+  const savepointBtn = card.querySelector('[data-role="savepoint"]');
+  const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
+
+  errorEl.style.display = 'none';
+  diffDetailEl.classList.remove('open');
+
+  let savepoints = [];
+  try {
+    const res = await fetch(`/api/projects/${project.id}/savepoints`);
+    savepoints = await res.json();
+  } catch (e) {
+    savepoints = [];
+  }
+  const latest = savepoints[0];
+  metaEl.textContent = `最終保存：${formatDate(latest ? latest.created_at : null)}`;
+
+  const fetchRes = await fetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
+  const fetchData = await fetchRes.json();
+
+  if (!fetchData.ok) {
+    statusEl.className = 'status-badge error';
+    statusEl.textContent = '✕ 認証エラー';
+    errorEl.style.display = 'block';
+    errorEl.textContent = fetchData.error ? fetchData.error.message : '不明なエラーです';
+    diffToggleBtn.disabled = true;
+    savepointBtn.disabled = true;
+    return { state: 'error' };
+  }
+
+  const diff = fetchData.diff || [];
+  diffToggleBtn.disabled = false;
+  savepointBtn.disabled = false;
+  diffDetailEl.innerHTML = renderDiffTable(diff);
+
+  if (diff.length === 0) {
+    statusEl.className = 'status-badge ok';
+    statusEl.textContent = '✓ 変更なし';
+    return { state: 'unchanged' };
+  }
+
+  const added = diff.reduce((sum, f) => sum + (f.added_lines || 0), 0);
+  const deleted = diff.reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
+  statusEl.className = 'status-badge warn';
+  statusEl.textContent = '⚠ 変更あり';
+  metaEl.textContent += `　変更量：+${added} / -${deleted}`;
+  return { state: 'changed' };
+}
+
+function wireCardActions(card, project) {
+  const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
+  const savepointBtn = card.querySelector('[data-role="savepoint"]');
+  const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
+
+  diffToggleBtn.addEventListener('click', () => {
+    diffDetailEl.classList.toggle('open');
+  });
+
+  savepointBtn.addEventListener('click', async () => {
+    const comment = window.prompt('セーブポイントのコメントを入力してください（省略可）', '');
+    if (comment === null) return;
+    savepointBtn.disabled = true;
+    savepointBtn.textContent = '保存中...';
+    try {
+      const res = await fetch(`/api/projects/${project.id}/savepoints`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment, created_by: window.__savepointUser || 'unknown' }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('セーブポイントの作成に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+      }
+    } finally {
+      savepointBtn.textContent = 'セーブポイント';
+      const result = await refreshProjectState(card, project);
+      updateSummaryFromCards();
+    }
+  });
+}
+
+function updateSummaryFromCards() {
+  const cards = Array.from(listEl.querySelectorAll('.project-card'));
+  let changed = 0, unchanged = 0, error = 0;
+  cards.forEach((card) => {
+    const badge = card.querySelector('[data-role="status"]');
+    if (badge.classList.contains('warn')) changed += 1;
+    else if (badge.classList.contains('ok')) unchanged += 1;
+    else if (badge.classList.contains('error')) error += 1;
+  });
+  document.getElementById('sumTotal').textContent = cards.length;
+  document.getElementById('sumChanged').textContent = changed;
+  document.getElementById('sumUnchanged').textContent = unchanged;
+  document.getElementById('sumError').textContent = error;
+  summaryEl.style.display = 'grid';
+}
+
+async function loadDashboard() {
+  const statusRes = await fetch('/api/oauth/status');
+  const status = await statusRes.json();
+
+  if (!status.connected) {
+    connectBannerEl.style.display = 'block';
+    loadingEl.style.display = 'none';
+    return;
+  }
+  accountInfoEl.textContent = status.email ? `接続中: ${status.email}` : '';
+  window.__savepointUser = status.email || 'unknown';
+
+  const projectsRes = await fetch('/api/projects');
+  const projects = await projectsRes.json();
+
+  loadingEl.style.display = 'none';
+
+  if (!projects.length) {
+    emptyEl.style.display = 'block';
+    summaryEl.style.display = 'grid';
+    return;
+  }
+
+  const cards = projects.map((project) => {
+    const card = renderCard(project);
+    listEl.appendChild(card);
+    wireCardActions(card, project);
+    return { card, project };
+  });
+
+  summaryEl.style.display = 'grid';
+  document.getElementById('sumTotal').textContent = projects.length;
+
+  await Promise.all(cards.map(({ card, project }) => refreshProjectState(card, project)));
+  updateSummaryFromCards();
+}
+
+loadDashboard().catch((err) => {
+  loadingEl.textContent = '読み込みに失敗しました: ' + err.message;
+});
+</script>
+</body>
+</html>

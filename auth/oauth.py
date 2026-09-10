@@ -122,6 +122,15 @@ def is_connected() -> bool:
     return _db().collection(collection).document(doc_id).get().exists
 
 
+def get_connected_email() -> str | None:
+    """接続済みGoogleアカウントのメールアドレスを返す（ダッシュボードでの操作者表示用）。"""
+    collection, doc_id = _CONNECTION_DOC
+    snapshot = _db().collection(collection).document(doc_id).get()
+    if not snapshot.exists:
+        return None
+    return (snapshot.to_dict() or {}).get("email")
+
+
 def get_credentials() -> Credentials:
     """保存済みのRefresh Tokenから、Apps Script API呼び出し用のCredentialsを再構築する。"""
     refresh_token = secrets.get_secret(REFRESH_TOKEN_SECRET_ID)
