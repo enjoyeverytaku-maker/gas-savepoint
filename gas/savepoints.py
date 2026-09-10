@@ -7,6 +7,7 @@ from typing import Any
 from google.cloud import firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
+from .audit import ACTION_VERSION_CREATE, log_operation
 from .diff import calculate_source_hash
 
 
@@ -37,7 +38,15 @@ def create_savepoint(
         "created_at": SERVER_TIMESTAMP,
     }
     _, doc_ref = client.collection(COLLECTION).add(payload)
-    return serialize_savepoint(doc_ref.get())
+    created = serialize_savepoint(doc_ref.get())
+    log_operation(
+        action=ACTION_VERSION_CREATE,
+        project_id=project_id,
+        user=created_by,
+        target_version=created["version_no"],
+        result="success",
+    )
+    return created
 
 
 def list_savepoints(project_id: str) -> list[dict[str, Any]]:

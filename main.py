@@ -16,6 +16,7 @@ from auth.users import (
     require_role,
     upsert_user,
 )
+from gas.audit import ACTION_LOGIN, log_operation
 from gas.routes import router as gas_router
 
 app = FastAPI(title="SavePoint")
@@ -28,6 +29,12 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 def dashboard(request: Request):
     """ダッシュボード画面（F10）。データはブラウザ側からJSON APIを呼んで描画する。"""
     return templates.TemplateResponse(request, "dashboard.html")
+
+
+@app.get("/audit-log")
+def audit_log_page(request: Request):
+    """監査ログ画面（F7）。閲覧権限はAPI側（/api/audit-logs、Admin限定）で強制する。"""
+    return templates.TemplateResponse(request, "audit_log.html")
 
 
 @app.get("/api/health")
@@ -69,11 +76,13 @@ class UserUpsert(BaseModel):
 
 @app.get("/api/me")
 def get_me(request: Request) -> dict[str, Any]:
-    """現在のリクエストの認証状態とロールを返す（画面側のボタン出し分けに使う）。"""
+    """現在のリクエストの認証状態とロールを返す（画面側のボタン出し分けに使う）。呼び出し自体をLOGINとして記録する。"""
     email = get_current_user_email(request)
     if email is None:
         return {"authenticated": False, "email": None, "role": None}
-    return {"authenticated": True, "email": email, "role": get_user_role(email)}
+    role = get_user_role(email)
+    log_operation(action=ACTION_LOGIN, user=email, result="success", details={"role": role})
+    return {"authenticated": True, "email": email, "role": role}
 
 
 @app.post("/api/users")

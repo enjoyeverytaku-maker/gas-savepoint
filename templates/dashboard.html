@@ -160,7 +160,10 @@
 <body>
 <header>
   <h1>SavePoint ダッシュボード</h1>
-  <div class="account-info" id="accountInfo"></div>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <a href="/audit-log" id="auditLogLink" style="display:none; font-size:13px; color:var(--accent); text-decoration:none;">監査ログ</a>
+    <div class="account-info" id="accountInfo"></div>
+  </div>
 </header>
 <main>
   <div id="connectBanner" class="connect-banner" style="display:none;">
@@ -198,6 +201,15 @@ const releaseListEl = document.getElementById('releaseList');
 
 let projectsById = {};
 let authHeaders = {};
+let currentUserRole = null;
+
+function canEdit() {
+  return currentUserRole === 'editor' || currentUserRole === 'admin';
+}
+
+function isAdmin() {
+  return currentUserRole === 'admin';
+}
 
 async function apiFetch(url, options = {}) {
   const headers = { ...(options.headers || {}), ...authHeaders };
@@ -295,7 +307,7 @@ async function refreshProjectState(card, project) {
 
   const diff = fetchData.diff || [];
   diffToggleBtn.disabled = false;
-  savepointBtn.disabled = false;
+  savepointBtn.disabled = !canEdit();
   diffDetailEl.innerHTML = renderDiffTable(diff);
 
   if (diff.length === 0) {
@@ -311,7 +323,7 @@ async function refreshProjectState(card, project) {
   statusEl.className = 'status-badge warn';
   statusEl.textContent = '⚠ 変更あり';
   metaEl.textContent += `　変更量：+${added} / -${deleted}`;
-  releaseBtn.disabled = false;
+  releaseBtn.disabled = !canEdit();
   card.dataset.state = 'changed';
   return { state: 'changed' };
 }
@@ -408,8 +420,8 @@ function renderReleaseItem(release) {
     </div>
     ${release.comment ? `<div class="comment">コメント：${escapeHtml(release.comment)}</div>` : ''}
     <div class="actions">
-      <button type="button" class="primary" data-role="approve">承認</button>
-      <button type="button" class="danger" data-role="reject">却下</button>
+      <button type="button" class="primary" data-role="approve" ${isAdmin() ? '' : 'disabled title="承認にはAdmin権限が必要です"'}>承認</button>
+      <button type="button" class="danger" data-role="reject" ${isAdmin() ? '' : 'disabled title="却下にはAdmin権限が必要です"'}>却下</button>
     </div>
   `;
   return item;
@@ -526,6 +538,17 @@ async function loadDashboard() {
   window.__savepointUser = status.email || 'unknown';
   if (status.dev_mode && status.email) {
     authHeaders = { 'X-Debug-User-Email': status.email };
+  }
+
+  try {
+    const meRes = await apiFetch('/api/me');
+    const me = await meRes.json();
+    currentUserRole = me.role || null;
+  } catch (e) {
+    currentUserRole = null;
+  }
+  if (currentUserRole === 'admin') {
+    document.getElementById('auditLogLink').style.display = 'inline';
   }
 
   const projectsRes = await apiFetch('/api/projects');

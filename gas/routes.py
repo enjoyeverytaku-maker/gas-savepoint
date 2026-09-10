@@ -11,6 +11,7 @@ from auth.oauth import get_credentials
 from auth.users import require_role
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
+from .audit import ACTION_GAS_PROJECT_CREATE, ACTION_SOURCE_FETCH, list_operations, log_operation
 from .diff import calculate_diff, calculate_source_hash
 from .projects import create_project, get_project, list_projects
 from .releases import (
@@ -75,7 +76,9 @@ class ReleaseDecision(BaseModel):
 @router.post("/projects")
 def post_project(project: ProjectCreate, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
     """GASプロジェクトを登録する（Admin限定）。"""
-    return create_project(project.model_dump())
+    created = create_project(project.model_dump())
+    log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")
+    return created
 
 
 @router.get("/projects")
@@ -129,13 +132,21 @@ def fetch_project_source(project_id: str, actor: str = Depends(require_role("vie
 
     latest_savepoint = get_latest_savepoint(project_id)
     previous_files = latest_savepoint["source_files"] if latest_savepoint else []
+    diff = calculate_diff(source_files, previous_files)
+    log_operation(
+        action=ACTION_SOURCE_FETCH,
+        project_id=project_id,
+        user=actor,
+        result="success",
+        details={"changed_files": len(diff)},
+    )
     return {
         "ok": True,
         "project_id": project_id,
         "script_id": project["script_id"],
         "source_files": source_files,
         "source_hash": calculate_source_hash(source_files),
-        "diff": calculate_diff(source_files, previous_files),
+        "diff": diff,
     }
 
 
@@ -337,3 +348,9 @@ def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(r
         )
 
     return {"ok": True, **result}
+
+
+@router.get("/audit-logs")
+def get_audit_logs(actor: str = Depends(require_role("admin"))) -> list[dict[str, Any]]:
+    """操作履歴（監査ログ）を新しい順で返す（Admin限定、F7）。"""
+    return list_operations()
