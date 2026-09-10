@@ -1,0 +1,121 @@
+"""Google OAuth接続（F9、spec.md §11）。
+
+単一組織（萬年）向けのInternalユーザータイプ接続を前提とし、既存プロトタイプの
+multiuser_oauth.pyにあった複数組織選択ロジックは持ち込まない（クリーンリライト方針）。
+
+前提となる事前設定（GCPコンソール側での手動作業、コードでは代替できない）:
+  1. OAuth同意画面をInternalユーザータイプで作成する
+  2. OAuth 2.0クライアントID（ウェブアプリケーション）を作成し、リダイレクトURIに
+     OAUTH_REDIRECT_URI（例: https://<cloud-runのURL>/oauth/callback）を登録する
+  3. 発行されたクライアントID・シークレットをSecret Managerへ登録する
+     （シークレットID: savepoint-oauth-client-id / savepoint-oauth-client-secret）
+"""
+import os
+
+import requests
+from google.auth.transport.requests import Request
+from google.cloud import firestore
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+
+from . import secrets
+
+# script.projects はGAS本体の読み書きに必要な最小スコープ（読み取り専用に分離する場合は
+# script.projects.readonlyへの変更を検討、docs/general_saas_roadmap.md §3参照）
+SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/script.projects",
+]
+
+OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8080/oauth/callback")
+REFRESH_TOKEN_SECRET_ID = "savepoint-oauth-refresh-token"
+
+_CONNECTION_DOC = ("google_account", "connection")
+
+
+def _db() -> firestore.Client:
+    return firestore.Client()
+
+
+def _client_config() -> dict:
+    client_id = secrets.get_secret("savepoint-oauth-client-id")
+    client_secret = secrets.get_secret("savepoint-oauth-client-secret")
+    return {
+        "web": {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [OAUTH_REDIRECT_URI],
+        }
+    }
+
+
+def build_auth_url() -> str:
+    """OAuth同意画面へのリダイレクト先URLを生成する。"""
+    flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=OAUTH_REDIRECT_URI)
+    auth_url, _ = flow.authorization_url(
+        access_type="offline",
+        prompt="consent",
+        include_granted_scopes="true",
+    )
+    return auth_url
+
+
+def handle_callback(authorization_response_url: str) -> dict:
+    """認可コードをトークンへ交換し、Refresh TokenをSecret Managerへ保存する。"""
+    flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=OAUTH_REDIRECT_URI)
+    flow.fetch_token(authorization_response=authorization_response_url)
+    creds = flow.credentials
+
+    if not creds.refresh_token:
+        raise RuntimeError(
+            "refresh_tokenが取得できませんでした。既に同意済みの場合はGoogleアカウントの"
+            "サードパーティアクセス設定からいったん連携を解除し、再接続してください"
+            "（2回目以降のconsentではrefresh_tokenが返らないことがあるため）"
+        )
+
+    secrets.set_secret(REFRESH_TOKEN_SECRET_ID, creds.refresh_token)
+
+    email = _fetch_connected_email(creds)
+    collection, doc_id = _CONNECTION_DOC
+    _db().collection(collection).document(doc_id).set(
+        {
+            "email": email,
+            "connected_at": firestore.SERVER_TIMESTAMP,
+            "scopes": SCOPES,
+        }
+    )
+    return {"email": email}
+
+
+def _fetch_connected_email(creds: Credentials) -> str:
+    resp = requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {creds.token}"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json().get("email", "")
+
+
+def is_connected() -> bool:
+    collection, doc_id = _CONNECTION_DOC
+    return _db().collection(collection).document(doc_id).get().exists
+
+
+def get_credentials() -> Credentials:
+    """保存済みのRefresh Tokenから、Apps Script API呼び出し用のCredentialsを再構築する。"""
+    refresh_token = secrets.get_secret(REFRESH_TOKEN_SECRET_ID)
+    config = _client_config()["web"]
+    creds = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri=config["token_uri"],
+        client_id=config["client_id"],
+        client_secret=config["client_secret"],
+        scopes=SCOPES,
+    )
+    creds.refresh(Request())
+    return creds
