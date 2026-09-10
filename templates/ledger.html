@@ -70,6 +70,21 @@
   tr:last-child td { border-bottom: none; }
   td input { width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
   .script-id { color: var(--muted); font-size: 12px; }
+  .readme-pre {
+    display: none;
+    margin: 8px 0 0;
+    padding: 8px;
+    background: #f7f8fa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    max-width: 360px;
+    max-height: 240px;
+    overflow: auto;
+  }
+  .readme-pre.open { display: block; }
+  .readme-muted { color: var(--muted); font-size: 12px; }
   .empty, .loading-text, .error-message, .notice { color: var(--muted); font-size: 14px; padding: 12px 0; text-align: center; }
   .error-message { color: #c0392b; }
 </style>
@@ -106,6 +121,7 @@
         <th>用途</th>
         <th>担当部署</th>
         <th>ステータス</th>
+        <th>README（AI生成）</th>
         <th></th>
       </tr>
     </thead>
@@ -128,6 +144,16 @@ async function apiFetch(url, options = {}) {
   return fetch(url, { ...options, headers });
 }
 
+function renderReadmeCell(project) {
+  if (!project.readme_markdown) {
+    return '<span class="readme-muted">未生成</span>';
+  }
+  return `
+    <button type="button" data-role="readme-toggle">README を見る</button>
+    <pre class="readme-pre" data-role="readme-pre">${escapeHtml(project.readme_markdown)}</pre>
+  `;
+}
+
 function renderRow(project) {
   const tr = document.createElement('tr');
   tr.dataset.projectId = project.id;
@@ -140,8 +166,15 @@ function renderRow(project) {
     <td data-field="description">${escapeHtml(project.description || '')}</td>
     <td data-field="department">${escapeHtml(project.department || '')}</td>
     <td data-field="status">${escapeHtml(project.status || '')}</td>
+    <td data-role="readme-cell">${renderReadmeCell(project)}</td>
     <td><button type="button" data-role="edit" ${isAdmin ? '' : 'disabled title="編集にはAdmin権限が必要です"'}>編集</button></td>
   `;
+  const readmeToggle = tr.querySelector('[data-role="readme-toggle"]');
+  if (readmeToggle) {
+    readmeToggle.addEventListener('click', () => {
+      tr.querySelector('[data-role="readme-pre"]').classList.toggle('open');
+    });
+  }
   return tr;
 }
 
@@ -159,11 +192,18 @@ function startEdit(tr, project) {
     <td><input data-field="description" value="${escapeHtml(current.description)}"></td>
     <td><input data-field="department" value="${escapeHtml(current.department)}"></td>
     <td><input data-field="status" value="${escapeHtml(current.status)}"></td>
+    <td data-role="readme-cell">${renderReadmeCell(project)}</td>
     <td>
       <button type="button" data-role="save" class="primary">保存</button>
       <button type="button" data-role="cancel">キャンセル</button>
     </td>
   `;
+  const readmeToggle = tr.querySelector('[data-role="readme-toggle"]');
+  if (readmeToggle) {
+    readmeToggle.addEventListener('click', () => {
+      tr.querySelector('[data-role="readme-pre"]').classList.toggle('open');
+    });
+  }
 
   tr.querySelector('[data-role="cancel"]').addEventListener('click', () => {
     const restoredRow = renderRow(project);
