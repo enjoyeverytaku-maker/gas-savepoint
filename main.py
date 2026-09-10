@@ -2,8 +2,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from auth import oauth
+from gas.routes import router as gas_router
 
 app = FastAPI(title="SavePoint")
+app.include_router(gas_router)
 
 
 @app.get("/api/health")
