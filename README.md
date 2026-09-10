@@ -54,6 +54,28 @@ export SAVEPOINT_DEV_MODE=1  # ローカル開発のみ。本番では設定し�
 curl -X POST localhost:8080/api/users -H "X-Debug-User-Email: you@example.com" -H "Content-Type: application/json" -d '{"email":"you@example.com","role":"admin"}'
 ```
 
+## 自動検知（F11、Cloud Scheduler）
+
+登録済み全GASプロジェクトの変更有無を定期的にチェックする。人間のRBACとは別に、
+Secret Manager管理の共有シークレットトークンで保護する（Cloud SchedulerはIAP配下の
+「ユーザー」ではないため）。
+
+```bash
+# トークンをSecret Managerへ登録（ランダムな値。以後Cloud Scheduler側の設定にも使う）
+openssl rand -hex 32 | gcloud secrets create savepoint-scheduler-token --data-file=- --project=$GCP_PROJECT
+```
+
+デプロイ後、Cloud Schedulerジョブを作成する（spec.md §6: 1日数回程度を想定。TODO要確定）:
+
+```bash
+gcloud scheduler jobs create http savepoint-sync-check \
+  --project=$GCP_PROJECT --location=<リージョン> \
+  --schedule="0 */4 * * *" \
+  --uri="https://<Cloud RunのURL>/api/sync/check-all" \
+  --http-method=POST \
+  --headers="X-Scheduler-Token=<savepoint-scheduler-tokenの値>"
+```
+
 ## デプロイ
 
 ```bash

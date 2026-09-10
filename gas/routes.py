@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,7 @@ from .releases import (
 )
 from .rollback import RollbackConflictError, RollbackTargetNotFoundError, rollback_to_version
 from .savepoints import create_savepoint, get_latest_savepoint, list_savepoints
+from .sync import check_all_projects, verify_scheduler_token
 
 
 router = APIRouter(prefix="/api")
@@ -380,3 +381,14 @@ def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(r
 def get_audit_logs(actor: str = Depends(require_role("admin"))) -> list[dict[str, Any]]:
     """操作履歴（監査ログ）を新しい順で返す（Admin限定、F7）。"""
     return list_operations()
+
+
+@router.post("/sync/check-all")
+def post_sync_check_all(request: Request) -> dict[str, Any]:
+    """Cloud Schedulerから定期実行され、全GASプロジェクトの変更有無をチェックする（F11）。
+
+    人間のRBACとは別の認証経路（共有シークレットトークン）で保護する。
+    """
+    verify_scheduler_token(request)
+    result = check_all_projects()
+    return {"ok": True, **result}
