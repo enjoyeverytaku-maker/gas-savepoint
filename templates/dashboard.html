@@ -69,6 +69,34 @@
   .summary .card .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .summary .card.warn .num { color: var(--warn); }
   .summary .card.error .num { color: var(--error); }
+  h2.section-title { font-size: 15px; margin: 0 0 10px; }
+  .release-panel { margin-bottom: 24px; }
+  .release-list { display: flex; flex-direction: column; gap: 10px; }
+  .release-item {
+    background: var(--card-bg);
+    border: 1px solid #f0c36d;
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .release-item .row1 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .release-item .project-name { font-weight: 600; font-size: 14px; }
+  .release-item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .release-item .comment { font-size: 13px; margin-top: 6px; }
+  .release-item .actions { margin-top: 10px; display: flex; gap: 8px; }
+  .release-empty {
+    color: var(--muted);
+    font-size: 13px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
   .project-list { display: flex; flex-direction: column; gap: 12px; }
   .project-card {
     background: var(--card-bg);
@@ -95,8 +123,8 @@
     color: var(--muted);
     margin-top: 6px;
   }
-  .project-card .actions { margin-top: 10px; display: flex; gap: 8px; }
-  .project-card button {
+  .project-card .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
     font-size: 13px;
     padding: 6px 12px;
     border-radius: 6px;
@@ -104,8 +132,11 @@
     background: #fff;
     cursor: pointer;
   }
-  .project-card button:hover { background: #f0f2f5; }
-  .project-card button:disabled { opacity: 0.5; cursor: default; }
+  button:hover { background: #f0f2f5; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover { background: #1d4fd6; }
+  button.danger { color: var(--error); border-color: var(--error); }
   .diff-detail {
     margin-top: 10px;
     border-top: 1px solid var(--border);
@@ -145,6 +176,11 @@
     <div class="card error"><div class="num" id="sumError">0</div><div class="label">認証エラー</div></div>
   </div>
 
+  <div class="release-panel" id="releasePanel" style="display:none;">
+    <h2 class="section-title">承認待ちリリース</h2>
+    <div class="release-list" id="releaseList"></div>
+  </div>
+
   <div id="projectList" class="project-list"></div>
   <div id="loadingText" class="loading-text">読み込み中...</div>
   <div id="emptyText" class="empty" style="display:none;">登録済みのGASプロジェクトがありません。</div>
@@ -157,6 +193,10 @@ const emptyEl = document.getElementById('emptyText');
 const summaryEl = document.getElementById('summary');
 const connectBannerEl = document.getElementById('connectBanner');
 const accountInfoEl = document.getElementById('accountInfo');
+const releasePanelEl = document.getElementById('releasePanel');
+const releaseListEl = document.getElementById('releaseList');
+
+let projectsById = {};
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -188,6 +228,7 @@ function renderCard(project) {
     <div class="actions">
       <button type="button" data-role="diff-toggle" disabled>差分を見る</button>
       <button type="button" data-role="savepoint" disabled>セーブポイント</button>
+      <button type="button" data-role="release-request" disabled>リリース申請</button>
     </div>
     <div class="diff-detail" data-role="diff-detail"></div>
   `;
@@ -215,6 +256,7 @@ async function refreshProjectState(card, project) {
   const errorEl = card.querySelector('[data-role="error"]');
   const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
   const savepointBtn = card.querySelector('[data-role="savepoint"]');
+  const releaseBtn = card.querySelector('[data-role="release-request"]');
   const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
 
   errorEl.style.display = 'none';
@@ -240,6 +282,8 @@ async function refreshProjectState(card, project) {
     errorEl.textContent = fetchData.error ? fetchData.error.message : '不明なエラーです';
     diffToggleBtn.disabled = true;
     savepointBtn.disabled = true;
+    releaseBtn.disabled = true;
+    card.dataset.state = 'error';
     return { state: 'error' };
   }
 
@@ -251,6 +295,8 @@ async function refreshProjectState(card, project) {
   if (diff.length === 0) {
     statusEl.className = 'status-badge ok';
     statusEl.textContent = '✓ 変更なし';
+    releaseBtn.disabled = true;
+    card.dataset.state = 'unchanged';
     return { state: 'unchanged' };
   }
 
@@ -259,12 +305,15 @@ async function refreshProjectState(card, project) {
   statusEl.className = 'status-badge warn';
   statusEl.textContent = '⚠ 変更あり';
   metaEl.textContent += `　変更量：+${added} / -${deleted}`;
+  releaseBtn.disabled = false;
+  card.dataset.state = 'changed';
   return { state: 'changed' };
 }
 
 function wireCardActions(card, project) {
   const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
   const savepointBtn = card.querySelector('[data-role="savepoint"]');
+  const releaseBtn = card.querySelector('[data-role="release-request"]');
   const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
 
   diffToggleBtn.addEventListener('click', () => {
@@ -288,8 +337,33 @@ function wireCardActions(card, project) {
       }
     } finally {
       savepointBtn.textContent = 'セーブポイント';
-      const result = await refreshProjectState(card, project);
+      await refreshProjectState(card, project);
       updateSummaryFromCards();
+    }
+  });
+
+  releaseBtn.addEventListener('click', async () => {
+    const comment = window.prompt('リリース申請のコメントを入力してください（省略可）', '');
+    if (comment === null) return;
+    releaseBtn.disabled = true;
+    releaseBtn.textContent = '申請中...';
+    try {
+      const res = await fetch(`/api/projects/${project.id}/releases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment, requested_by: window.__savepointUser || 'unknown' }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('リリース申請に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+      } else {
+        alert('リリース申請を送信しました。承認をお待ちください。');
+      }
+    } finally {
+      releaseBtn.textContent = 'リリース申請';
+      await refreshProjectState(card, project);
+      updateSummaryFromCards();
+      await refreshReleasePanel();
     }
   });
 }
@@ -308,6 +382,129 @@ function updateSummaryFromCards() {
   document.getElementById('sumUnchanged').textContent = unchanged;
   document.getElementById('sumError').textContent = error;
   summaryEl.style.display = 'grid';
+}
+
+function renderReleaseItem(release) {
+  const project = projectsById[release.project_id];
+  const projectName = project ? project.project_name : release.project_id;
+  const addedTotal = (release.diff || []).reduce((sum, f) => sum + (f.added_lines || 0), 0);
+  const deletedTotal = (release.diff || []).reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
+  const item = document.createElement('div');
+  item.className = 'release-item';
+  item.dataset.releaseId = release.id;
+  item.dataset.projectId = release.project_id;
+  item.innerHTML = `
+    <div class="row1">
+      <div>
+        <div class="project-name">${escapeHtml(projectName)}</div>
+        <div class="meta">申請者：${escapeHtml(release.requested_by)}　申請日時：${formatDate(release.requested_at)}　変更量：+${addedTotal} / -${deletedTotal}</div>
+      </div>
+    </div>
+    ${release.comment ? `<div class="comment">コメント：${escapeHtml(release.comment)}</div>` : ''}
+    <div class="actions">
+      <button type="button" class="primary" data-role="approve">承認</button>
+      <button type="button" class="danger" data-role="reject">却下</button>
+    </div>
+  `;
+  return item;
+}
+
+function wireReleaseItemActions(item, release) {
+  const approveBtn = item.querySelector('[data-role="approve"]');
+  const rejectBtn = item.querySelector('[data-role="reject"]');
+
+  approveBtn.addEventListener('click', async () => {
+    if (!window.confirm('このリリースを承認し、正式なバージョンとして記録します。よろしいですか？')) return;
+    approveBtn.disabled = true;
+    rejectBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/releases/${release.id}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown' }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('承認に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        approveBtn.disabled = false;
+        rejectBtn.disabled = false;
+        return;
+      }
+    } catch (e) {
+      alert('承認に失敗しました: ' + e.message);
+      approveBtn.disabled = false;
+      rejectBtn.disabled = false;
+      return;
+    }
+    await refreshReleasePanel();
+    const card = listEl.querySelector(`.project-card[data-project-id="${release.project_id}"]`);
+    const project = projectsById[release.project_id];
+    if (card && project) {
+      await refreshProjectState(card, project);
+      updateSummaryFromCards();
+    }
+  });
+
+  rejectBtn.addEventListener('click', async () => {
+    const reason = window.prompt('却下理由を入力してください（省略可）', '');
+    if (reason === null) return;
+    approveBtn.disabled = true;
+    rejectBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/releases/${release.id}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown', reason }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('却下に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        approveBtn.disabled = false;
+        rejectBtn.disabled = false;
+        return;
+      }
+    } catch (e) {
+      alert('却下に失敗しました: ' + e.message);
+      approveBtn.disabled = false;
+      rejectBtn.disabled = false;
+      return;
+    }
+    await refreshReleasePanel();
+  });
+}
+
+async function refreshReleasePanel() {
+  const projects = Object.values(projectsById);
+  if (!projects.length) {
+    releasePanelEl.style.display = 'none';
+    return;
+  }
+  const lists = await Promise.all(projects.map(async (project) => {
+    try {
+      const res = await fetch(`/api/projects/${project.id}/releases`);
+      const data = await res.json();
+      return Array.isArray(data) ? data.filter((r) => r.status === 'pending') : [];
+    } catch (e) {
+      return [];
+    }
+  }));
+  const pending = lists.flat().sort((a, b) => (b.requested_at || '').localeCompare(a.requested_at || ''));
+
+  releaseListEl.innerHTML = '';
+  if (!pending.length) {
+    releasePanelEl.style.display = 'block';
+    const empty = document.createElement('div');
+    empty.className = 'release-empty';
+    empty.textContent = '承認待ちのリリースはありません。';
+    releaseListEl.appendChild(empty);
+    return;
+  }
+  releasePanelEl.style.display = 'block';
+  pending.forEach((release) => {
+    const item = renderReleaseItem(release);
+    releaseListEl.appendChild(item);
+    wireReleaseItemActions(item, release);
+  });
 }
 
 async function loadDashboard() {
@@ -333,6 +530,8 @@ async function loadDashboard() {
     return;
   }
 
+  projectsById = Object.fromEntries(projects.map((p) => [p.id, p]));
+
   const cards = projects.map((project) => {
     const card = renderCard(project);
     listEl.appendChild(card);
@@ -343,7 +542,10 @@ async function loadDashboard() {
   summaryEl.style.display = 'grid';
   document.getElementById('sumTotal').textContent = projects.length;
 
-  await Promise.all(cards.map(({ card, project }) => refreshProjectState(card, project)));
+  await Promise.all([
+    Promise.all(cards.map(({ card, project }) => refreshProjectState(card, project))),
+    refreshReleasePanel(),
+  ]);
   updateSummaryFromCards();
 }
 
