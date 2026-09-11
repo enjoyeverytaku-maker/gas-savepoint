@@ -11,6 +11,7 @@ multiuser_oauth.pyにあった複数組織選択ロジックは持ち込まな�
      （シークレットID: savepoint-oauth-client-id / savepoint-oauth-client-secret）
 """
 import os
+import threading
 from urllib.parse import parse_qs, urlparse
 
 import requests
@@ -38,6 +39,12 @@ OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8080
 REFRESH_TOKEN_SECRET_ID = "savepoint-oauth-refresh-token"
 
 _CONNECTION_DOC = ("google_account", "connection")
+
+# get_credentials()のプロセス内キャッシュ。未キャッシュ・失効時のみSecret Manager経由の
+# Refresh Token取得＋Googleへのアクセストークン更新を行う（登録プロジェクト数が増えるほど
+# ダッシュボードが遅くなっていた問題への対処、2026-09-12）。
+_credentials_cache: Credentials | None = None
+_credentials_lock = threading.Lock()
 
 
 def _db() -> firestore.Client:
@@ -99,6 +106,7 @@ def handle_callback(authorization_response_url: str) -> dict:
         )
 
     secrets.set_secret(REFRESH_TOKEN_SECRET_ID, creds.refresh_token)
+    _invalidate_credentials_cache()
 
     email = _fetch_connected_email(creds)
     collection, doc_id = _CONNECTION_DOC
@@ -137,16 +145,34 @@ def get_connected_email() -> str | None:
 
 
 def get_credentials() -> Credentials:
-    """保存済みのRefresh Tokenから、Apps Script API呼び出し用のCredentialsを再構築する。"""
-    refresh_token = secrets.get_secret(REFRESH_TOKEN_SECRET_ID)
-    config = _client_config()["web"]
-    creds = Credentials(
-        token=None,
-        refresh_token=refresh_token,
-        token_uri=config["token_uri"],
-        client_id=config["client_id"],
-        client_secret=config["client_secret"],
-        scopes=SCOPES,
-    )
-    creds.refresh(Request())
-    return creds
+    """保存済みのRefresh Tokenから、Apps Script API呼び出し用のCredentialsを取得する。
+
+    有効なアクセストークンをプロセス内にキャッシュし、失効するまで再利用する
+    （キャッシュしないと、登録プロジェクト数分だけ毎回Secret Manager取得＋Googleへの
+    トークンリフレッシュが並列発生し、プロジェクトが増えるほど遅くなっていた）。
+    """
+    global _credentials_cache
+    with _credentials_lock:
+        if _credentials_cache is not None and _credentials_cache.valid:
+            return _credentials_cache
+
+        refresh_token = secrets.get_secret(REFRESH_TOKEN_SECRET_ID)
+        config = _client_config()["web"]
+        creds = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri=config["token_uri"],
+            client_id=config["client_id"],
+            client_secret=config["client_secret"],
+            scopes=SCOPES,
+        )
+        creds.refresh(Request())
+        _credentials_cache = creds
+        return creds
+
+
+def _invalidate_credentials_cache() -> None:
+    """再接続（スコープ変更等）でRefresh Tokenが更新された際にキャッシュを破棄する。"""
+    global _credentials_cache
+    with _credentials_lock:
+        _credentials_cache = None
