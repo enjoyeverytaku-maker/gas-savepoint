@@ -19,6 +19,7 @@ from .audit import (
     log_operation,
 )
 from .diff import calculate_diff, calculate_source_hash
+from .discovery import discover_standalone_projects
 from .projects import create_project, get_project, list_projects, set_readme, update_project
 from .readme_gen import generate_readme
 from .releases import (
@@ -112,6 +113,24 @@ def post_project(project: ProjectCreate, actor: str = Depends(require_role("admi
 def get_projects(actor: str = Depends(require_role("viewer"))) -> list[dict[str, Any]]:
     """GASプロジェクト一覧を返す。"""
     return list_projects()
+
+
+@router.get("/discovery/standalone")
+def get_discovery_standalone(actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
+    """接続済みGoogleアカウントのスタンドアロンGASを自動検出する（F1拡張、Admin限定）。
+
+    バインドGAS（スプレッドシート等に紐付くGAS）はこの方法では検出できないため対象外。
+    台帳画面からScript IDを手動入力して登録する。
+    """
+    try:
+        discovered = discover_standalone_projects(get_credentials())
+    except Exception as exc:  # noqa: BLE001 - Drive API呼び出し失敗もJSONで返す
+        return {"ok": False, "error": {"type": "discovery_error", "message": str(exc)}}
+
+    registered_script_ids = {project["script_id"] for project in list_projects()}
+    for item in discovered:
+        item["already_registered"] = item["script_id"] in registered_script_ids
+    return {"ok": True, "projects": discovered}
 
 
 @router.patch("/projects/{project_id}")

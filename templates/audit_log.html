@@ -7,32 +7,54 @@
 <style>
   :root {
     color-scheme: light;
-    --bg: #f5f6f8;
+    --sidebar-bg: #14161b;
+    --sidebar-text: #d6d8dc;
+    --sidebar-muted: #8b9099;
+    --sidebar-active-bg: #23262d;
+    --bg: #f7f8fa;
     --card-bg: #ffffff;
-    --border: #e0e3e8;
-    --text: #1f2430;
-    --muted: #6b7280;
+    --border: #e3e5e9;
+    --text: #16181d;
+    --muted: #767c86;
     --error: #c0392b;
-    --accent: #2563eb;
+    --accent: #23b26d;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
   body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     background: var(--bg);
     color: var(--text);
   }
-  header {
-    background: var(--card-bg);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 24px 16px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  header a { color: var(--accent); font-size: 13px; text-decoration: none; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 6px;
+  }
+  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
+  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
+  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
+  h1.page-title { font-size: 20px; margin: 0 0 20px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
   table { width: 100%; border-collapse: collapse; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
   th { background: #f0f2f5; font-weight: 600; }
@@ -44,11 +66,19 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>SavePoint 監査ログ</h1>
-  <a href="/">← ダッシュボードへ戻る</a>
-</header>
-<main>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">SavePoint</div>
+    <nav>
+      <a href="/">ダッシュボード</a>
+      <a href="/ledger">台帳</a>
+      <a href="/audit-log" class="active">監査ログ</a>
+    </nav>
+    <div class="account-info" id="accountInfo"></div>
+  </aside>
+  <div class="main-content">
+  <main>
+  <h1 class="page-title">監査ログ</h1>
   <div id="loadingText" class="loading-text">読み込み中...</div>
   <div id="errorText" class="error-message" style="display:none;"></div>
   <div id="emptyText" class="empty" style="display:none;">操作履歴がありません。</div>
@@ -65,7 +95,9 @@
     </thead>
     <tbody id="logBody"></tbody>
   </table>
-</main>
+  </main>
+  </div>
+</div>
 
 <script>
 function escapeHtml(str) {
@@ -95,6 +127,7 @@ async function loadAuditLog() {
     if (status.dev_mode && status.email) {
       authHeaders = { 'X-Debug-User-Email': status.email };
     }
+    document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
   } catch (e) {
     // dev_mode判定に失敗しても本番(IAP)では影響ないため無視する
   }

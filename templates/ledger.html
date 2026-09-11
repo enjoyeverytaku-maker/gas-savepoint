@@ -7,31 +7,55 @@
 <style>
   :root {
     color-scheme: light;
-    --bg: #f5f6f8;
+    --sidebar-bg: #14161b;
+    --sidebar-text: #d6d8dc;
+    --sidebar-muted: #8b9099;
+    --sidebar-active-bg: #23262d;
+    --bg: #f7f8fa;
     --card-bg: #ffffff;
-    --border: #e0e3e8;
-    --text: #1f2430;
-    --muted: #6b7280;
-    --accent: #2563eb;
+    --border: #e3e5e9;
+    --text: #16181d;
+    --muted: #767c86;
+    --accent: #23b26d;
+    --accent-dark: #1c8f58;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
   body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     background: var(--bg);
     color: var(--text);
   }
-  header {
-    background: var(--card-bg);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 24px 16px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  header a { color: var(--accent); font-size: 13px; text-decoration: none; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 6px;
+  }
+  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
+  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar nav a[hidden] { display: none; }
+  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
+  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
+  h1.page-title { font-size: 20px; margin: 0 0 20px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
   .card {
     background: var(--card-bg);
     border: 1px solid var(--border);
@@ -63,7 +87,7 @@
   }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); margin-top: 10px; }
   button:hover { background: #f0f2f5; }
-  button.primary:hover { background: #1d4fd6; }
+  button.primary:hover { background: var(--accent-dark); }
   table { width: 100%; border-collapse: collapse; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
   th { background: #f0f2f5; font-weight: 600; }
@@ -90,15 +114,30 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>SavePoint 台帳</h1>
-  <a href="/">← ダッシュボードへ戻る</a>
-</header>
-<main>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">SavePoint</div>
+    <nav>
+      <a href="/">ダッシュボード</a>
+      <a href="/ledger" class="active">台帳</a>
+      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+    </nav>
+    <div class="account-info" id="accountInfo"></div>
+  </aside>
+  <div class="main-content">
+  <main>
+  <h1 class="page-title">台帳</h1>
   <div id="permissionNotice" class="notice" style="display:none;"></div>
 
+  <div class="card" id="discoveryCard" style="display:none;">
+    <h2>スタンドアロンGASの自動検出</h2>
+    <p class="readme-muted">スプレッドシート等に紐付かない独立したGASプロジェクトを、接続中のGoogleアカウントから自動的に見つけます。バインドGAS（スプレッドシート等に紐付くGAS）は自動検出できないため、下の「手動登録」からScript IDを入力してください。</p>
+    <button type="button" id="discoverBtn">検出を実行</button>
+    <div id="discoveryResult" style="margin-top:10px;"></div>
+  </div>
+
   <div class="card" id="registerCard" style="display:none;">
-    <h2>+ 新規GASプロジェクト登録</h2>
+    <h2>+ 手動登録（バインドGAS向け・Script IDを直接入力）</h2>
     <div class="form-grid">
       <div><label>Project Name</label><input id="newProjectName" type="text"></div>
       <div><label>Script ID</label><input id="newScriptId" type="text"></div>
@@ -127,7 +166,9 @@
     </thead>
     <tbody id="ledgerBody"></tbody>
   </table>
-</main>
+  </main>
+  </div>
+</div>
 
 <script>
 let authHeaders = {};
@@ -245,6 +286,7 @@ async function loadLedger() {
   const tableEl = document.getElementById('ledgerTable');
   const bodyEl = document.getElementById('ledgerBody');
   const registerCardEl = document.getElementById('registerCard');
+  const discoveryCardEl = document.getElementById('discoveryCard');
   const noticeEl = document.getElementById('permissionNotice');
 
   const statusRes = await fetch('/api/oauth/status');
@@ -252,6 +294,7 @@ async function loadLedger() {
   if (status.dev_mode && status.email) {
     authHeaders = { 'X-Debug-User-Email': status.email };
   }
+  document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
 
   try {
     const meRes = await apiFetch('/api/me');
@@ -260,9 +303,13 @@ async function loadLedger() {
   } catch (e) {
     isAdmin = false;
   }
+  if (isAdmin) {
+    document.getElementById('auditLogLink').hidden = false;
+  }
 
   if (isAdmin) {
     registerCardEl.style.display = 'block';
+    discoveryCardEl.style.display = 'block';
   } else {
     noticeEl.style.display = 'block';
     noticeEl.textContent = '登録・編集にはAdmin権限が必要です。台帳の閲覧のみ可能です。';
@@ -315,6 +362,64 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
     return;
   }
   window.location.reload();
+});
+
+document.getElementById('discoverBtn').addEventListener('click', async () => {
+  const resultEl = document.getElementById('discoveryResult');
+  const discoverBtn = document.getElementById('discoverBtn');
+  discoverBtn.disabled = true;
+  resultEl.textContent = '検出中...';
+  try {
+    const res = await apiFetch('/api/discovery/standalone');
+    const data = await res.json();
+    if (!data.ok) {
+      resultEl.textContent = '検出に失敗しました: ' + (data.error ? data.error.message : '不明なエラー');
+      return;
+    }
+    if (!data.projects.length) {
+      resultEl.textContent = 'スタンドアロンGASが見つかりませんでした。';
+      return;
+    }
+    resultEl.innerHTML = '';
+    data.projects.forEach((item) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid var(--border); font-size:13px;';
+      row.innerHTML = `
+        <div style="flex:1;">
+          <div>${escapeHtml(item.project_name)}</div>
+          <div class="script-id">${escapeHtml(item.script_id)}</div>
+        </div>
+        <button type="button" data-role="register-discovered" ${item.already_registered ? 'disabled' : ''}>
+          ${item.already_registered ? '登録済み' : '登録'}
+        </button>
+      `;
+      const btn = row.querySelector('[data-role="register-discovered"]');
+      if (!item.already_registered) {
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          btn.textContent = '登録中...';
+          const registerRes = await apiFetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_name: item.project_name, script_id: item.script_id }),
+          });
+          if (!registerRes.ok) {
+            const errData = await registerRes.json().catch(() => ({}));
+            alert('登録に失敗しました: ' + (errData.detail || registerRes.statusText));
+            btn.disabled = false;
+            btn.textContent = '登録';
+            return;
+          }
+          window.location.reload();
+        });
+      }
+      resultEl.appendChild(row);
+    });
+  } catch (e) {
+    resultEl.textContent = '検出に失敗しました: ' + e.message;
+  } finally {
+    discoverBtn.disabled = false;
+  }
 });
 
 loadLedger().catch((err) => {

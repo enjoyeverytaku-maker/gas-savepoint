@@ -22,11 +22,16 @@ from google_auth_oauthlib.flow import Flow
 from . import secrets
 
 # script.projects はGAS本体の読み書きに必要な最小スコープ（読み取り専用に分離する場合は
-# script.projects.readonlyへの変更を検討、docs/general_saas_roadmap.md §3参照）
+# script.projects.readonlyへの変更を検討、docs/general_saas_roadmap.md §3参照）。
+# drive.metadata.readonly + drive.scripts はスタンドアロンGAS自動検出（F1拡張）に必要
+# （gas/discovery.pyがDrive APIでmimeType=application/vnd.google-apps.scriptのファイルを
+# 検索する。既存プロトタイプのdiscover_apps_script_projects相当）
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/script.projects",
+    "https://www.googleapis.com/auth/drive.metadata.readonly",
+    "https://www.googleapis.com/auth/drive.scripts",
 ]
 
 OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8080/oauth/callback")

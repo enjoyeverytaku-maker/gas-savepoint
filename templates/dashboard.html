@@ -7,34 +7,57 @@
 <style>
   :root {
     color-scheme: light;
-    --bg: #f5f6f8;
+    --sidebar-bg: #14161b;
+    --sidebar-text: #d6d8dc;
+    --sidebar-muted: #8b9099;
+    --sidebar-active-bg: #23262d;
+    --bg: #f7f8fa;
     --card-bg: #ffffff;
-    --border: #e0e3e8;
-    --text: #1f2430;
-    --muted: #6b7280;
-    --ok: #1a7f37;
+    --border: #e3e5e9;
+    --text: #16181d;
+    --muted: #767c86;
+    --ok: #23b26d;
     --warn: #b7791f;
     --error: #c0392b;
-    --accent: #2563eb;
+    --accent: #23b26d;
+    --accent-dark: #1c8f58;
   }
   * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
   body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
     background: var(--bg);
     color: var(--text);
   }
-  header {
-    background: var(--card-bg);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 24px 16px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
   }
-  header h1 { font-size: 18px; margin: 0; }
-  .account-info { font-size: 13px; color: var(--muted); }
-  main { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 6px;
+  }
+  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
+  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar nav a[hidden] { display: none; }
+  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
+  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
   .connect-banner {
     background: #fff7e6;
     border: 1px solid #f0c36d;
@@ -69,6 +92,7 @@
   .summary .card .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
   .summary .card.warn .num { color: var(--warn); }
   .summary .card.error .num { color: var(--error); }
+  h1.page-title { font-size: 20px; margin: 0 0 20px; }
   h2.section-title { font-size: 15px; margin: 0 0 10px; }
   .release-panel { margin-bottom: 24px; }
   .release-list { display: flex; flex-direction: column; gap: 10px; }
@@ -135,7 +159,7 @@
   button:hover { background: #f0f2f5; }
   button:disabled { opacity: 0.5; cursor: default; }
   button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button.primary:hover { background: #1d4fd6; }
+  button.primary:hover { background: var(--accent-dark); }
   button.danger { color: var(--error); border-color: var(--error); }
   .diff-detail {
     margin-top: 10px;
@@ -158,37 +182,43 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>SavePoint ダッシュボード</h1>
-  <div style="display:flex; align-items:center; gap:16px;">
-    <a href="/ledger" style="font-size:13px; color:var(--accent); text-decoration:none;">台帳</a>
-    <a href="/audit-log" id="auditLogLink" style="display:none; font-size:13px; color:var(--accent); text-decoration:none;">監査ログ</a>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">SavePoint</div>
+    <nav>
+      <a href="/" class="active">ダッシュボード</a>
+      <a href="/ledger">台帳</a>
+      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+    </nav>
     <div class="account-info" id="accountInfo"></div>
-  </div>
-</header>
-<main>
-  <div id="connectBanner" class="connect-banner" style="display:none;">
-    Googleアカウントが未接続です。GASのソース取得・セーブポイント作成にはアカウント接続が必要です。
-    <br>
-    <a href="/oauth/connect">Googleアカウントを接続する</a>
-  </div>
+  </aside>
+  <div class="main-content">
+    <main>
+      <h1 class="page-title">ダッシュボード</h1>
+      <div id="connectBanner" class="connect-banner" style="display:none;">
+        Googleアカウントが未接続です。GASのソース取得・セーブポイント作成にはアカウント接続が必要です。
+        <br>
+        <a href="/oauth/connect">Googleアカウントを接続する</a>
+      </div>
 
-  <div class="summary" id="summary" style="display:none;">
-    <div class="card"><div class="num" id="sumTotal">0</div><div class="label">GAS Projects</div></div>
-    <div class="card warn"><div class="num" id="sumChanged">0</div><div class="label">変更あり</div></div>
-    <div class="card"><div class="num" id="sumUnchanged">0</div><div class="label">変更なし</div></div>
-    <div class="card error"><div class="num" id="sumError">0</div><div class="label">認証エラー</div></div>
-  </div>
+      <div class="summary" id="summary" style="display:none;">
+        <div class="card"><div class="num" id="sumTotal">0</div><div class="label">GAS Projects</div></div>
+        <div class="card warn"><div class="num" id="sumChanged">0</div><div class="label">変更あり</div></div>
+        <div class="card"><div class="num" id="sumUnchanged">0</div><div class="label">変更なし</div></div>
+        <div class="card error"><div class="num" id="sumError">0</div><div class="label">認証エラー</div></div>
+      </div>
 
-  <div class="release-panel" id="releasePanel" style="display:none;">
-    <h2 class="section-title">承認待ちリリース</h2>
-    <div class="release-list" id="releaseList"></div>
-  </div>
+      <div class="release-panel" id="releasePanel" style="display:none;">
+        <h2 class="section-title">承認待ちリリース</h2>
+        <div class="release-list" id="releaseList"></div>
+      </div>
 
-  <div id="projectList" class="project-list"></div>
-  <div id="loadingText" class="loading-text">読み込み中...</div>
-  <div id="emptyText" class="empty" style="display:none;">登録済みのGASプロジェクトがありません。</div>
-</main>
+      <div id="projectList" class="project-list"></div>
+      <div id="loadingText" class="loading-text">読み込み中...</div>
+      <div id="emptyText" class="empty" style="display:none;">登録済みのGASプロジェクトがありません。</div>
+    </main>
+  </div>
+</div>
 
 <script>
 const listEl = document.getElementById('projectList');
@@ -549,7 +579,7 @@ async function loadDashboard() {
     currentUserRole = null;
   }
   if (currentUserRole === 'admin') {
-    document.getElementById('auditLogLink').style.display = 'inline';
+    document.getElementById('auditLogLink').hidden = false;
   }
 
   const projectsRes = await apiFetch('/api/projects');
