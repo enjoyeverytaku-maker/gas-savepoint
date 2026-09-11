@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SavePoint リリース管理</title>
+<style>
+  :root {
+    color-scheme: light;
+    --sidebar-bg: #14161b;
+    --sidebar-text: #d6d8dc;
+    --sidebar-muted: #8b9099;
+    --sidebar-active-bg: #23262d;
+    --bg: #f7f8fa;
+    --card-bg: #ffffff;
+    --border: #e3e5e9;
+    --text: #16181d;
+    --muted: #767c86;
+    --ok: #23b26d;
+    --warn: #b7791f;
+    --error: #c0392b;
+    --accent: #23b26d;
+    --accent-dark: #1c8f58;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 24px 16px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 6px;
+  }
+  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
+  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
+  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+  h1.page-title { font-size: 20px; margin: 0 0 6px; }
+  .breadcrumb { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+  .breadcrumb a { color: var(--accent); text-decoration: none; cursor: pointer; }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+  }
+  .project-pick-row, .release-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .project-pick-row .name { font-weight: 600; font-size: 14px; }
+  .project-pick-row .script-id { font-size: 12px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; }
+  button {
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f2f5; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.primary:hover { background: var(--accent-dark); }
+  button.danger { color: var(--error); border-color: var(--error); }
+  textarea {
+    width: 100%;
+    min-height: 70px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { background: #f0f2f5; font-weight: 600; }
+  .status-badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+  .status-pending { background: #fff7e6; color: var(--warn); }
+  .status-approved { background: #eafaf1; color: var(--ok); }
+  .status-rejected { background: #fdecea; color: var(--error); }
+  .meta-line { font-size: 12px; color: var(--muted); margin: 4px 0; }
+  .added { color: var(--ok); }
+  .deleted { color: var(--error); }
+  .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 16px 0; }
+  .error-message { color: var(--error); }
+  .summary-box {
+    text-align: center;
+    padding: 32px 20px;
+  }
+  .summary-box .big-status { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">SavePoint</div>
+    <nav>
+      <a href="/">ダッシュボード</a>
+      <a href="/ledger">台帳</a>
+      <a href="/releases" class="active">リリース管理</a>
+      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+    </nav>
+    <div class="account-info" id="accountInfo"></div>
+  </aside>
+  <div class="main-content">
+    <main id="viewRoot">
+      <div class="loading-text">読み込み中...</div>
+    </main>
+  </div>
+</div>
+
+<script>
+let authHeaders = {};
+let currentUserRole = null;
+let projectsCache = [];
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function formatDate(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders };
+  return fetch(url, { ...options, headers });
+}
+
+const STATUS_LABELS = { pending: '承認待ち', approved: '承認済み', rejected: '却下' };
+
+function statusBadge(status) {
+  return `<span class="status-badge status-${status}">${STATUS_LABELS[status] || status}</span>`;
+}
+
+function diffSummary(diff) {
+  const added = (diff || []).reduce((sum, f) => sum + (f.added_lines || 0), 0);
+  const deleted = (diff || []).reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
+  return `<span class="added">+${added}</span> / <span class="deleted">-${deleted}</span>`;
+}
+
+function diffTable(diff) {
+  if (!diff || !diff.length) return '<div class="meta-line">変更はありません。</div>';
+  const rows = diff.map((f) => `
+    <tr>
+      <td>${escapeHtml(f.name)}</td>
+      <td>${escapeHtml(f.status)}</td>
+      <td class="added">+${f.added_lines}</td>
+      <td class="deleted">-${f.deleted_lines}</td>
+    </tr>
+  `).join('');
+  return `<table><thead><tr><th>ファイル</th><th>状態</th><th>追加</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ------------------------------------------------------------
+// ルーティング（#select, #new/{projectId}, #list/{projectId}, #detail/{releaseId}, #summary/{releaseId}）
+// ------------------------------------------------------------
+function navigate(hash) {
+  window.location.hash = hash;
+}
+
+async function renderCurrentView() {
+  const root = document.getElementById('viewRoot');
+  root.innerHTML = '<div class="loading-text">読み込み中...</div>';
+  const hash = window.location.hash.replace(/^#/, '') || 'select';
+  const [view, param] = hash.split('/');
+
+  try {
+    if (view === 'select') return await renderSelectView(root);
+    if (view === 'new') return await renderNewReleaseView(root, param);
+    if (view === 'list') return await renderListView(root, param);
+    if (view === 'detail') return await renderDetailView(root, param);
+    if (view === 'summary') return await renderSummaryView(root, param);
+    return await renderSelectView(root);
+  } catch (err) {
+    root.innerHTML = `<div class="error-message">読み込みに失敗しました: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// 1. プロジェクト選択画面
+async function renderSelectView(root) {
+  const res = await apiFetch('/api/projects');
+  if (res.status === 401 || res.status === 403) {
+    root.innerHTML = '<div class="error-message">閲覧には権限が必要です。</div>';
+    return;
+  }
+  const projects = await res.json();
+  projectsCache = projects;
+
+  if (!projects.length) {
+    root.innerHTML = '<h1 class="page-title">リリース管理</h1><div class="empty">登録済みのGASプロジェクトがありません。まず台帳から登録してください。</div>';
+    return;
+  }
+
+  root.innerHTML = `
+    <h1 class="page-title">リリース管理</h1>
+    <div class="meta-line">対象のGASプロジェクトを選択してください。</div>
+    ${projects.map((p) => `
+      <div class="card project-pick-row" data-project-id="${p.id}">
+        <div>
+          <div class="name">${escapeHtml(p.project_name)}</div>
+          <div class="script-id">${escapeHtml(p.script_id)}</div>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" data-role="go-new">新規リリース作成</button>
+          <button type="button" data-role="go-list">リリース一覧</button>
+        </div>
+      </div>
+    `).join('')}
+  `;
+
+  root.querySelectorAll('[data-project-id]').forEach((row) => {
+    const id = row.dataset.projectId;
+    row.querySelector('[data-role="go-new"]').addEventListener('click', () => navigate(`new/${id}`));
+    row.querySelector('[data-role="go-list"]').addEventListener('click', () => navigate(`list/${id}`));
+  });
+}
+
+// 2. 新規リリース作成画面（未リリース変更の自動検出付き）
+async function renderNewReleaseView(root, projectId) {
+  const project = projectsCache.find((p) => p.id === projectId) || (await (await apiFetch(`/api/projects/${projectId}`)).json());
+
+  root.innerHTML = `
+    <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
+    <h1 class="page-title">新規リリース作成</h1>
+    <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
+    <div class="card" id="diffCard"><div class="loading-text">未リリースの変更を確認中...</div></div>
+  `;
+  root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));
+
+  const diffCard = document.getElementById('diffCard');
+  const fetchRes = await apiFetch(`/api/projects/${projectId}/fetch`, { method: 'POST' });
+  const fetchData = await fetchRes.json();
+
+  if (!fetchData.ok) {
+    diffCard.innerHTML = `<div class="error-message">最新コードの取得に失敗しました: ${escapeHtml(fetchData.error ? fetchData.error.message : '不明なエラー')}</div>`;
+    return;
+  }
+
+  if (!fetchData.diff.length) {
+    diffCard.innerHTML = '<div class="empty">未リリースの変更はありません。GASを編集してから再度お試しください。</div>';
+    return;
+  }
+
+  diffCard.innerHTML = `
+    <div class="meta-line">未リリースの変更（${diffSummary(fetchData.diff)}）</div>
+    ${diffTable(fetchData.diff)}
+    <div style="margin-top:14px;">
+      <label class="meta-line" for="releaseComment">申請コメント（省略可）</label>
+      <textarea id="releaseComment" placeholder="この変更の内容・理由を記入してください"></textarea>
+    </div>
+    <div class="actions" style="margin-top:10px;">
+      <button type="button" class="primary" id="submitReleaseBtn" ${canEdit() ? '' : 'disabled title="リリース申請にはDeveloper以上の権限が必要です"'}>リリースを申請する</button>
+    </div>
+  `;
+
+  document.getElementById('submitReleaseBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('submitReleaseBtn');
+    btn.disabled = true;
+    btn.textContent = '申請中...';
+    try {
+      const res = await apiFetch(`/api/projects/${projectId}/releases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment: document.getElementById('releaseComment').value, requested_by: window.__savepointUser || 'unknown' }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('申請に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        btn.disabled = false;
+        btn.textContent = 'リリースを申請する';
+        return;
+      }
+      navigate(`summary/${data.release.id}`);
+    } catch (e) {
+      alert('申請に失敗しました: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'リリースを申請する';
+    }
+  });
+}
+
+// 3. リリース一覧画面
+async function renderListView(root, projectId) {
+  const project = projectsCache.find((p) => p.id === projectId) || (await (await apiFetch(`/api/projects/${projectId}`)).json());
+  const res = await apiFetch(`/api/projects/${projectId}/releases`);
+  const releases = await res.json();
+
+  root.innerHTML = `
+    <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
+    <h1 class="page-title">リリース一覧</h1>
+    <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
+    <div class="actions" style="margin-bottom:14px;">
+      <button type="button" class="primary" data-role="go-new">+ 新規リリース作成</button>
+    </div>
+    ${!releases.length ? '<div class="empty">リリース申請はまだありません。</div>' : releases.map((r) => `
+      <div class="card release-row" data-release-id="${r.id}">
+        <div>
+          ${statusBadge(r.status)}
+          <div class="meta-line">申請者: ${escapeHtml(r.requested_by)} / 申請日時: ${formatDate(r.requested_at)} / 変更量: ${diffSummary(r.diff)}</div>
+          ${r.comment ? `<div class="meta-line">コメント: ${escapeHtml(r.comment)}</div>` : ''}
+        </div>
+        <div class="actions"><button type="button" data-role="go-detail">詳細を見る</button></div>
+      </div>
+    `).join('')}
+  `;
+  root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));
+  root.querySelector('[data-role="go-new"]').addEventListener('click', () => navigate(`new/${projectId}`));
+  root.querySelectorAll('[data-release-id]').forEach((row) => {
+    row.querySelector('[data-role="go-detail"]').addEventListener('click', () => navigate(`detail/${row.dataset.releaseId}`));
+  });
+}
+
+// 4. リリース詳細画面
+async function renderDetailView(root, releaseId) {
+  const res = await apiFetch(`/api/releases/${releaseId}`);
+  if (res.status === 401 || res.status === 403) {
+    root.innerHTML = '<div class="error-message">閲覧には権限が必要です。</div>';
+    return;
+  }
+  if (res.status === 404) {
+    root.innerHTML = '<div class="error-message">リリース申請が見つかりません。</div>';
+    return;
+  }
+  const release = await res.json();
+
+  root.innerHTML = `
+    <div class="breadcrumb"><a data-role="back">← リリース一覧</a></div>
+    <h1 class="page-title">リリース詳細</h1>
+    <div class="card">
+      <div>${statusBadge(release.status)}</div>
+      <div class="meta-line">申請者: ${escapeHtml(release.requested_by)} / 申請日時: ${formatDate(release.requested_at)}</div>
+      ${release.approved_by ? `<div class="meta-line">承認者: ${escapeHtml(release.approved_by)} / 承認日時: ${formatDate(release.approved_at)} / 結果バージョン: v${release.resulting_version_no}</div>` : ''}
+      ${release.rejected_by ? `<div class="meta-line">却下者: ${escapeHtml(release.rejected_by)} / 却下日時: ${formatDate(release.rejected_at)}${release.rejected_reason ? ` / 理由: ${escapeHtml(release.rejected_reason)}` : ''}</div>` : ''}
+      ${release.comment ? `<div class="meta-line">申請コメント: ${escapeHtml(release.comment)}</div>` : ''}
+      <div class="meta-line">変更量: ${diffSummary(release.diff)}</div>
+      ${diffTable(release.diff)}
+      ${release.status === 'pending' ? `
+        <div class="actions" style="margin-top:14px;">
+          <button type="button" class="primary" data-role="approve" ${isOwner() ? '' : 'disabled title="承認にはOwner権限が必要です"'}>承認</button>
+          <button type="button" class="danger" data-role="reject" ${isOwner() ? '' : 'disabled title="却下にはOwner権限が必要です"'}>却下</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+  root.querySelector('[data-role="back"]').addEventListener('click', () => navigate(`list/${release.project_id}`));
+
+  const approveBtn = root.querySelector('[data-role="approve"]');
+  if (approveBtn) {
+    approveBtn.addEventListener('click', async () => {
+      if (!window.confirm('このリリースを承認し、正式なバージョンとして記録します。よろしいですか？')) return;
+      const res = await apiFetch(`/api/releases/${releaseId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown' }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('承認に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        return;
+      }
+      navigate(`summary/${releaseId}`);
+    });
+  }
+  const rejectBtn = root.querySelector('[data-role="reject"]');
+  if (rejectBtn) {
+    rejectBtn.addEventListener('click', async () => {
+      const reason = window.prompt('却下理由を入力してください（省略可）', '');
+      if (reason === null) return;
+      const res = await apiFetch(`/api/releases/${releaseId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown', reason }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('却下に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        return;
+      }
+      navigate(`summary/${releaseId}`);
+    });
+  }
+}
+
+// 5. リリースサマリー画面
+async function renderSummaryView(root, releaseId) {
+  const res = await apiFetch(`/api/releases/${releaseId}`);
+  if (!res.ok) {
+    root.innerHTML = '<div class="error-message">リリース情報の取得に失敗しました。</div>';
+    return;
+  }
+  const release = await res.json();
+  const statusText = { pending: '申請を送信しました。承認をお待ちください。', approved: '承認され、正式なバージョンとして記録されました。', rejected: '却下されました。' }[release.status] || '';
+
+  root.innerHTML = `
+    <div class="card summary-box">
+      <div class="big-status">${statusBadge(release.status)}</div>
+      <div class="meta-line">${statusText}</div>
+      ${release.resulting_version_no ? `<div class="meta-line">記録されたバージョン: v${release.resulting_version_no}</div>` : ''}
+      <div class="actions" style="justify-content:center; margin-top:16px;">
+        <button type="button" data-role="go-detail">詳細を見る</button>
+        <button type="button" class="primary" data-role="go-list">リリース一覧へ戻る</button>
+      </div>
+    </div>
+  `;
+  root.querySelector('[data-role="go-detail"]').addEventListener('click', () => navigate(`detail/${releaseId}`));
+  root.querySelector('[data-role="go-list"]').addEventListener('click', () => navigate(`list/${release.project_id}`));
+}
+
+function canEdit() {
+  return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
+}
+function isOwner() {
+  return currentUserRole === 'owner';
+}
+
+async function init() {
+  const statusRes = await fetch('/api/oauth/status');
+  const status = await statusRes.json();
+  if (status.dev_mode && status.email) {
+    authHeaders = { 'X-Debug-User-Email': status.email };
+  }
+  document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
+  window.__savepointUser = status.email || 'unknown';
+
+  try {
+    const meRes = await apiFetch('/api/me');
+    const me = await meRes.json();
+    currentUserRole = me.role || null;
+  } catch (e) {
+    currentUserRole = null;
+  }
+  if (currentUserRole === 'owner') {
+    document.getElementById('auditLogLink').hidden = false;
+  }
+
+  window.addEventListener('hashchange', renderCurrentView);
+  await renderCurrentView();
+}
+
+init().catch((err) => {
+  document.getElementById('viewRoot').innerHTML = `<div class="error-message">初期化に失敗しました: ${escapeHtml(err.message)}</div>`;
+});
+</script>
+</body>
+</html>

@@ -60,6 +60,17 @@ def ledger_page(request: Request):
     return templates.TemplateResponse(request, "ledger.html")
 
 
+@app.get("/releases")
+def releases_page(request: Request):
+    """リリース管理画面（F5、パートナーズ版releases_admin相当の5画面構成、T21）。
+
+    プロジェクト選択・新規リリース作成・一覧・詳細・サマリーをhashベースの
+    クライアントサイドルーティングで1ファイルにまとめている。権限はAPI側
+    （require_project_role）で強制する。
+    """
+    return templates.TemplateResponse(request, "releases.html")
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

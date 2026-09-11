@@ -425,6 +425,16 @@ def post_release_reject(release_id: str, body: ReleaseDecision, request: Request
     return {"ok": True, "release": release}
 
 
+@router.get("/releases/{release_id}")
+def get_release_detail(release_id: str, request: Request):
+    """リリース申請1件の詳細を返す（T21リリース詳細画面向け）。"""
+    _require_release_project_role(request, release_id, "viewer")
+    release = get_release(release_id)
+    if release is None:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"リリース申請が見つかりません: {release_id}"}})
+    return release
+
+
 @router.post("/projects/{project_id}/rollback")
 def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(require_project_role("developer"))):
     """過去のセーブポイントへロールバックする（F4、プロジェクトDeveloper以上）。
