@@ -109,6 +109,23 @@
   }
   .readme-pre.open { display: block; }
   .readme-muted { color: var(--muted); font-size: 12px; }
+  .members-panel {
+    display: none;
+    margin-top: 8px;
+    min-width: 260px;
+  }
+  .members-panel.open { display: block; }
+  .members-panel .member-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    padding: 3px 0;
+  }
+  .members-panel .member-row .email { flex: 1; }
+  .members-panel select { font-size: 12px; padding: 2px 4px; }
+  .members-panel .add-member { display: flex; gap: 4px; margin-top: 6px; }
+  .members-panel .add-member input { width: 130px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
   .empty, .loading-text, .error-message, .notice { color: var(--muted); font-size: 14px; padding: 12px 0; text-align: center; }
   .error-message { color: #c0392b; }
 </style>
@@ -161,6 +178,7 @@
         <th>担当部署</th>
         <th>ステータス</th>
         <th>README（AI生成）</th>
+        <th>メンバー</th>
         <th></th>
       </tr>
     </thead>
@@ -195,6 +213,101 @@ function renderReadmeCell(project) {
   `;
 }
 
+const ROLE_LABELS = { owner: '所有者', maintainer: '保守担当', developer: '開発者', viewer: '閲覧者' };
+const ROLE_OPTIONS = Object.keys(ROLE_LABELS)
+  .map((role) => `<option value="${role}">${ROLE_LABELS[role]}</option>`)
+  .join('');
+
+function renderMembersCell(project) {
+  return `
+    <button type="button" data-role="members-toggle">メンバー管理</button>
+    <div class="members-panel" data-role="members-panel">
+      <div data-role="members-list" class="readme-muted">読み込み中...</div>
+      <div class="add-member">
+        <input type="text" data-role="new-member-email" placeholder="メールアドレス">
+        <select data-role="new-member-role">${ROLE_OPTIONS}</select>
+        <button type="button" data-role="add-member">追加</button>
+      </div>
+    </div>
+  `;
+}
+
+async function loadMembersInto(project, listEl) {
+  const res = await apiFetch(`/api/projects/${project.id}/members`);
+  if (res.status === 401 || res.status === 403) {
+    listEl.textContent = 'メンバー閲覧には権限が必要です。';
+    return;
+  }
+  const members = await res.json();
+  if (!members.length) {
+    listEl.innerHTML = '<div class="readme-muted">プロジェクト単位のメンバーは未設定（グローバルロールが適用されます）。</div>';
+    return;
+  }
+  listEl.innerHTML = members.map((m) => `
+    <div class="member-row" data-email="${escapeHtml(m.email)}">
+      <span class="email">${escapeHtml(m.email)}</span>
+      <span>${ROLE_LABELS[m.role] || escapeHtml(m.role)}</span>
+      <button type="button" data-role="remove-member" ${isAdmin ? '' : 'disabled'}>削除</button>
+    </div>
+  `).join('');
+}
+
+function wireMembersPanel(tr, project) {
+  const toggle = tr.querySelector('[data-role="members-toggle"]');
+  const panel = tr.querySelector('[data-role="members-panel"]');
+  const listEl = tr.querySelector('[data-role="members-list"]');
+  let loaded = false;
+
+  toggle.addEventListener('click', async () => {
+    panel.classList.toggle('open');
+    if (panel.classList.contains('open') && !loaded) {
+      loaded = true;
+      await loadMembersInto(project, listEl);
+    }
+  });
+
+  listEl.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-role="remove-member"]');
+    if (!btn) return;
+    const email = btn.closest('.member-row').dataset.email;
+    if (!window.confirm(`${email} をこのプロジェクトのメンバーから削除しますか？`)) return;
+    const res = await apiFetch(`/api/projects/${project.id}/members/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      alert('削除に失敗しました。');
+      return;
+    }
+    await loadMembersInto(project, listEl);
+  });
+
+  const addBtn = tr.querySelector('[data-role="add-member"]');
+  addBtn.addEventListener('click', async () => {
+    const emailInput = tr.querySelector('[data-role="new-member-email"]');
+    const roleSelect = tr.querySelector('[data-role="new-member-role"]');
+    const email = emailInput.value.trim();
+    if (!email) {
+      alert('メールアドレスを入力してください。');
+      return;
+    }
+    addBtn.disabled = true;
+    try {
+      const res = await apiFetch(`/api/projects/${project.id}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role: roleSelect.value }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('追加に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        return;
+      }
+      emailInput.value = '';
+      await loadMembersInto(project, listEl);
+    } finally {
+      addBtn.disabled = false;
+    }
+  });
+}
+
 function renderRow(project) {
   const tr = document.createElement('tr');
   tr.dataset.projectId = project.id;
@@ -208,7 +321,8 @@ function renderRow(project) {
     <td data-field="department">${escapeHtml(project.department || '')}</td>
     <td data-field="status">${escapeHtml(project.status || '')}</td>
     <td data-role="readme-cell">${renderReadmeCell(project)}</td>
-    <td><button type="button" data-role="edit" ${isAdmin ? '' : 'disabled title="編集にはAdmin権限が必要です"'}>編集</button></td>
+    <td data-role="members-cell">${renderMembersCell(project)}</td>
+    <td><button type="button" data-role="edit" ${isAdmin ? '' : 'disabled title="編集にはOwner権限が必要です"'}>編集</button></td>
   `;
   const readmeToggle = tr.querySelector('[data-role="readme-toggle"]');
   if (readmeToggle) {
@@ -216,6 +330,7 @@ function renderRow(project) {
       tr.querySelector('[data-role="readme-pre"]').classList.toggle('open');
     });
   }
+  wireMembersPanel(tr, project);
   return tr;
 }
 
@@ -234,6 +349,7 @@ function startEdit(tr, project) {
     <td><input data-field="department" value="${escapeHtml(current.department)}"></td>
     <td><input data-field="status" value="${escapeHtml(current.status)}"></td>
     <td data-role="readme-cell">${renderReadmeCell(project)}</td>
+    <td data-role="members-cell">${renderMembersCell(project)}</td>
     <td>
       <button type="button" data-role="save" class="primary">保存</button>
       <button type="button" data-role="cancel">キャンセル</button>
@@ -245,6 +361,7 @@ function startEdit(tr, project) {
       tr.querySelector('[data-role="readme-pre"]').classList.toggle('open');
     });
   }
+  wireMembersPanel(tr, project);
 
   tr.querySelector('[data-role="cancel"]').addEventListener('click', () => {
     const restoredRow = renderRow(project);
@@ -299,7 +416,7 @@ async function loadLedger() {
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
-    isAdmin = me.role === 'admin';
+    isAdmin = me.role === 'owner';
   } catch (e) {
     isAdmin = false;
   }
@@ -312,7 +429,7 @@ async function loadLedger() {
     discoveryCardEl.style.display = 'block';
   } else {
     noticeEl.style.display = 'block';
-    noticeEl.textContent = '登録・編集にはAdmin権限が必要です。台帳の閲覧のみ可能です。';
+    noticeEl.textContent = '登録・編集にはOwner権限が必要です。台帳の閲覧のみ可能です。';
   }
 
   const res = await apiFetch('/api/projects');

@@ -234,12 +234,16 @@ let projectsById = {};
 let authHeaders = {};
 let currentUserRole = null;
 
+// 注: currentUserRoleはグローバルロール（/api/me）のみを見た簡易表示用ヒント。
+// プロジェクト単位のロール（T20、gas_projects/{id}/membersでの上書き）は個別に
+// フェッチしていないため、プロジェクトごとに実際の権限と食い違う場合がある
+// （実際の許可判定は常にサーバー側require_project_roleが行うため安全側には倒れる）。
 function canEdit() {
-  return currentUserRole === 'editor' || currentUserRole === 'admin';
+  return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
 }
 
 function isAdmin() {
-  return currentUserRole === 'admin';
+  return currentUserRole === 'owner';
 }
 
 async function apiFetch(url, options = {}) {
@@ -451,8 +455,8 @@ function renderReleaseItem(release) {
     </div>
     ${release.comment ? `<div class="comment">コメント：${escapeHtml(release.comment)}</div>` : ''}
     <div class="actions">
-      <button type="button" class="primary" data-role="approve" ${isAdmin() ? '' : 'disabled title="承認にはAdmin権限が必要です"'}>承認</button>
-      <button type="button" class="danger" data-role="reject" ${isAdmin() ? '' : 'disabled title="却下にはAdmin権限が必要です"'}>却下</button>
+      <button type="button" class="primary" data-role="approve" ${isAdmin() ? '' : 'disabled title="承認にはOwner権限が必要です"'}>承認</button>
+      <button type="button" class="danger" data-role="reject" ${isAdmin() ? '' : 'disabled title="却下にはOwner権限が必要です"'}>却下</button>
     </div>
   `;
   return item;
@@ -578,7 +582,7 @@ async function loadDashboard() {
   } catch (e) {
     currentUserRole = null;
   }
-  if (currentUserRole === 'admin') {
+  if (currentUserRole === 'owner') {
     document.getElementById('auditLogLink').hidden = false;
   }
 

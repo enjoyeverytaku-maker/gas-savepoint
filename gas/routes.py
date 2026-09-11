@@ -3,12 +3,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from auth.oauth import get_credentials
-from auth.users import require_role
+from auth.users import ROLE_RANK, get_current_user_email, get_project_role, require_project_role, require_role
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
 from .audit import (
@@ -20,6 +20,7 @@ from .audit import (
 )
 from .diff import calculate_diff, calculate_source_hash
 from .discovery import discover_standalone_projects
+from .members import list_members, remove_member, upsert_member
 from .projects import create_project, get_project, list_projects, set_readme, update_project
 from .readme_gen import generate_readme
 from .releases import (
@@ -28,6 +29,7 @@ from .releases import (
     ReleaseNotPendingError,
     approve_release,
     create_release,
+    get_release,
     list_releases,
     reject_release,
 )
@@ -92,9 +94,16 @@ class ReleaseDecision(BaseModel):
     reason: str = ""
 
 
+class MemberUpsert(BaseModel):
+    """プロジェクトメンバー追加・更新リクエスト（F6拡張、パートナーズ版members_admin相当）。"""
+
+    email: str
+    role: str
+
+
 @router.post("/projects")
-def post_project(project: ProjectCreate, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """GASプロジェクトを登録する（Admin限定）。"""
+def post_project(project: ProjectCreate, actor: str = Depends(require_role("owner"))) -> dict[str, Any]:
+    """GASプロジェクトを登録する（Owner限定）。"""
     created = create_project(project.model_dump())
     log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")
     try:
@@ -116,8 +125,8 @@ def get_projects(actor: str = Depends(require_role("viewer"))) -> list[dict[str,
 
 
 @router.get("/discovery/standalone")
-def get_discovery_standalone(actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """接続済みGoogleアカウントのスタンドアロンGASを自動検出する（F1拡張、Admin限定）。
+def get_discovery_standalone(actor: str = Depends(require_role("owner"))) -> dict[str, Any]:
+    """接続済みGoogleアカウントのスタンドアロンGASを自動検出する（F1拡張、Owner限定）。
 
     バインドGAS（スプレッドシート等に紐付くGAS）はこの方法では検出できないため対象外。
     台帳画面からScript IDを手動入力して登録する。
@@ -134,8 +143,8 @@ def get_discovery_standalone(actor: str = Depends(require_role("admin"))) -> dic
 
 
 @router.patch("/projects/{project_id}")
-def patch_project(project_id: str, body: ProjectUpdate, actor: str = Depends(require_role("admin"))):
-    """台帳項目（用途・担当部署・ステータス等）を更新する（Admin限定、F8）。"""
+def patch_project(project_id: str, body: ProjectUpdate, actor: str = Depends(require_project_role("owner"))):
+    """台帳項目（用途・担当部署・ステータス等）を更新する（プロジェクトOwner以上、F8）。"""
     updated = update_project(project_id, body.model_dump())
     if updated is None:
         return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"project not found: {project_id}"}})
@@ -144,7 +153,7 @@ def patch_project(project_id: str, body: ProjectUpdate, actor: str = Depends(req
 
 
 @router.get("/projects/{project_id}")
-def get_project_detail(project_id: str, actor: str = Depends(require_role("viewer"))):
+def get_project_detail(project_id: str, actor: str = Depends(require_project_role("viewer"))):
     """GASプロジェクト詳細を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -153,7 +162,7 @@ def get_project_detail(project_id: str, actor: str = Depends(require_role("viewe
 
 
 @router.post("/projects/{project_id}/fetch")
-def fetch_project_source(project_id: str, actor: str = Depends(require_role("viewer"))):
+def fetch_project_source(project_id: str, actor: str = Depends(require_project_role("viewer"))):
     """最新GASソースを取得して差分を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -207,8 +216,8 @@ def fetch_project_source(project_id: str, actor: str = Depends(require_role("vie
 
 
 @router.post("/projects/{project_id}/savepoints")
-def post_savepoint(project_id: str, savepoint: SavepointCreate, actor: str = Depends(require_role("editor"))):
-    """GASソースを取得してセーブポイントを作成する（Editor以上）。"""
+def post_savepoint(project_id: str, savepoint: SavepointCreate, actor: str = Depends(require_project_role("developer"))):
+    """GASソースを取得してセーブポイントを作成する（プロジェクトDeveloper以上）。"""
     project = get_project(project_id)
     if project is None:
         return JSONResponse(status_code=404, content={"error": "project not found"})
@@ -254,6 +263,28 @@ def post_savepoint(project_id: str, savepoint: SavepointCreate, actor: str = Dep
     return {"ok": True, "savepoint": created}
 
 
+def _require_release_project_role(request: Request, release_id: str, min_role: str) -> str:
+    """リリースが属するプロジェクトに対して指定ロール以上を要求する。
+
+    /releases/{release_id}/... にはproject_idがパスに含まれないため、
+    require_project_roleのDependsパターンが使えない。先にreleaseを引いて
+    project_idを解決してから権限判定する。
+    """
+    email = get_current_user_email(request)
+    if email is None:
+        raise HTTPException(status_code=401, detail="認証されていません")
+    release = get_release(release_id)
+    if release is None:
+        raise HTTPException(status_code=404, detail=f"リリース申請が見つかりません: {release_id}")
+    role = get_project_role(release["project_id"], email)
+    if ROLE_RANK.get(role, -1) < ROLE_RANK[min_role]:
+        raise HTTPException(
+            status_code=403,
+            detail=f"この操作には{min_role}以上の権限が必要です（現在のロール: {role}）",
+        )
+    return email
+
+
 def _try_generate_and_save_readme(project_id: str, project_name: str, source_files: list[dict[str, Any]]) -> None:
     """README生成と保存をベストエフォートで実行する。"""
     try:
@@ -264,7 +295,7 @@ def _try_generate_and_save_readme(project_id: str, project_name: str, source_fil
 
 
 @router.get("/projects/{project_id}/savepoints")
-def get_savepoints(project_id: str, actor: str = Depends(require_role("viewer"))):
+def get_savepoints(project_id: str, actor: str = Depends(require_project_role("viewer"))):
     """指定プロジェクトのセーブポイント履歴を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -272,9 +303,32 @@ def get_savepoints(project_id: str, actor: str = Depends(require_role("viewer"))
     return list_savepoints(project_id)
 
 
+@router.get("/projects/{project_id}/members")
+def get_project_members(project_id: str, actor: str = Depends(require_project_role("viewer"))) -> list[dict[str, Any]]:
+    """指定プロジェクトのメンバー一覧を返す（パートナーズ版members_admin相当、F6拡張）。"""
+    return list_members(project_id)
+
+
+@router.post("/projects/{project_id}/members")
+def post_project_member(project_id: str, body: MemberUpsert, actor: str = Depends(require_project_role("owner"))):
+    """プロジェクトへメンバーを追加・ロール更新する（プロジェクトOwner限定）。"""
+    try:
+        member = upsert_member(project_id, body.email, body.role, updated_by=actor)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": {"type": "invalid_role", "message": str(exc)}})
+    return {"ok": True, "member": member}
+
+
+@router.delete("/projects/{project_id}/members/{email}")
+def delete_project_member(project_id: str, email: str, actor: str = Depends(require_project_role("owner"))):
+    """プロジェクトからメンバーを削除する（プロジェクトOwner限定。削除後はグローバルロールへフォールバックする）。"""
+    remove_member(project_id, email)
+    return {"ok": True}
+
+
 @router.post("/projects/{project_id}/releases")
-def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(require_role("editor"))):
-    """GASソースを取得してリリース申請を作成する（Editor以上）。"""
+def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(require_project_role("developer"))):
+    """GASソースを取得してリリース申請を作成する（プロジェクトDeveloper以上）。"""
     try:
         release = create_release(
             project_id=project_id,
@@ -310,7 +364,7 @@ def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(requ
 
 
 @router.get("/projects/{project_id}/releases")
-def get_project_releases(project_id: str, actor: str = Depends(require_role("viewer"))):
+def get_project_releases(project_id: str, actor: str = Depends(require_project_role("viewer"))):
     """指定プロジェクトのリリース申請一覧を返す。"""
     project = get_project(project_id)
     if project is None:
@@ -322,8 +376,9 @@ def get_project_releases(project_id: str, actor: str = Depends(require_role("vie
 
 
 @router.post("/releases/{release_id}/approve")
-def post_release_approve(release_id: str, body: ReleaseDecision, actor: str = Depends(require_role("admin"))):
-    """リリース申請を承認する（Admin限定）。"""
+def post_release_approve(release_id: str, body: ReleaseDecision, request: Request):
+    """リリース申請を承認する（対象プロジェクトのOwner以上、release_idからproject_idを解決して判定）。"""
+    _require_release_project_role(request, release_id, "owner")
     try:
         result = approve_release(release_id=release_id, approved_by=body.performed_by)
     except ReleaseNotFoundError as exc:
@@ -344,8 +399,9 @@ def post_release_approve(release_id: str, body: ReleaseDecision, actor: str = De
 
 
 @router.post("/releases/{release_id}/reject")
-def post_release_reject(release_id: str, body: ReleaseDecision, actor: str = Depends(require_role("admin"))):
-    """リリース申請を却下する（Admin限定）。"""
+def post_release_reject(release_id: str, body: ReleaseDecision, request: Request):
+    """リリース申請を却下する（対象プロジェクトのOwner以上、release_idからproject_idを解決して判定）。"""
+    _require_release_project_role(request, release_id, "owner")
     try:
         release = reject_release(
             release_id=release_id,
@@ -370,8 +426,8 @@ def post_release_reject(release_id: str, body: ReleaseDecision, actor: str = Dep
 
 
 @router.post("/projects/{project_id}/rollback")
-def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(require_role("editor"))):
-    """過去のセーブポイントへロールバックする（F4、Editor以上）。
+def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(require_project_role("developer"))):
+    """過去のセーブポイントへロールバックする（F4、プロジェクトDeveloper以上）。
 
     復元前に現在の状態を自動バックアップし、expected_current_hashが
     渡された場合は楽観ロックで同時編集を検知する。
@@ -421,8 +477,8 @@ def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(r
 
 
 @router.get("/audit-logs")
-def get_audit_logs(actor: str = Depends(require_role("admin"))) -> list[dict[str, Any]]:
-    """操作履歴（監査ログ）を新しい順で返す（Admin限定、F7）。"""
+def get_audit_logs(actor: str = Depends(require_role("owner"))) -> list[dict[str, Any]]:
+    """操作履歴（監査ログ）を新しい順で返す（Owner限定、F7）。"""
     return list_operations()
 
 

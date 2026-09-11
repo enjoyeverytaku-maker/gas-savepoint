@@ -50,13 +50,13 @@ def dashboard(request: Request):
 
 @app.get("/audit-log")
 def audit_log_page(request: Request):
-    """監査ログ画面（F7）。閲覧権限はAPI側（/api/audit-logs、Admin限定）で強制する。"""
+    """監査ログ画面（F7）。閲覧権限はAPI側（/api/audit-logs、Owner限定）で強制する。"""
     return templates.TemplateResponse(request, "audit_log.html")
 
 
 @app.get("/ledger")
 def ledger_page(request: Request):
-    """台帳画面（F8）。登録・編集の権限はAPI側（Admin限定）で強制する。"""
+    """台帳画面（F8）。登録・編集の権限はAPI側（Owner限定）で強制する。"""
     return templates.TemplateResponse(request, "ledger.html")
 
 
@@ -109,8 +109,8 @@ def get_me(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/users")
-def post_user(body: UserUpsert, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """ユーザーのロールを登録・更新する（Admin限定）。"""
+def post_user(body: UserUpsert, request: Request, actor: str = Depends(require_role("owner"))) -> dict[str, Any]:
+    """ユーザーのロールを登録・更新する（Owner限定）。"""
     try:
         user = upsert_user(email=body.email, role=body.role, updated_by=actor)
     except ValueError as exc:
@@ -119,13 +119,13 @@ def post_user(body: UserUpsert, request: Request, actor: str = Depends(require_r
 
 
 @app.get("/api/users")
-def get_users(request: Request, actor: str = Depends(require_role("admin"))) -> list[dict[str, Any]]:
-    """ユーザー一覧を返す（Admin限定）。"""
+def get_users(request: Request, actor: str = Depends(require_role("owner"))) -> list[dict[str, Any]]:
+    """ユーザー一覧を返す（Owner限定）。"""
     return list_users()
 
 
 @app.delete("/api/users/{email}")
-def delete_user_route(email: str, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """ユーザーを削除する（Admin限定）。"""
+def delete_user_route(email: str, request: Request, actor: str = Depends(require_role("owner"))) -> dict[str, Any]:
+    """ユーザーを削除する（Owner限定）。"""
     delete_user(email)
     return {"ok": True}

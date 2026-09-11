@@ -137,7 +137,7 @@ async function loadAuditLog() {
 
   if (res.status === 401 || res.status === 403) {
     errorEl.style.display = 'block';
-    errorEl.textContent = '監査ログの閲覧にはAdmin権限が必要です。';
+    errorEl.textContent = '監査ログの閲覧にはOwner権限が必要です。';
     return;
   }
   if (!res.ok) {
