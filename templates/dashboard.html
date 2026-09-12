@@ -220,7 +220,7 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand-row">
+    <a href="/" class="brand-row" style="text-decoration:none;color:inherit;">
       <div class="brand-icon">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>
       </div>
@@ -228,7 +228,7 @@
         <div class="brand-name">SavePoint</div>
         <div class="brand-sub">GAS 変更管理</div>
       </div>
-    </div>
+    </a>
     <nav>
       <a href="/" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
       <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
@@ -331,9 +331,10 @@ let authHeaders = {};
 let currentUserRole = null;
 let currentFilter = null;
 
-function canEdit() {
-  return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
-}
+// プロジェクト単位ロールの序列（グローバルロールadmin/memberとは別語彙）。
+// カードごとの編集可否はグローバルロールではなく/my-roleで取得したこの値で判定する
+// （2026-09-12、GASごとに権限を付与する方式へ変更）。
+const PROJECT_ROLE_RANK = { viewer: 0, developer: 1, maintainer: 2, owner: 3 };
 
 async function apiFetch(url, options = {}) {
   const headers = { ...(options.headers || {}), ...authHeaders };
@@ -410,6 +411,10 @@ function renderDiffTable(diff) {
 }
 
 async function refreshProjectState(card, project) {
+  // 2026-09-12: 生きたApps Script API呼び出し（/fetch）を毎回の画面表示で行うと
+  // プロジェクト数だけ外部API呼び出しが並列発生し読み込みが重くなるため、
+  // 表示にはFirestoreキャッシュ（/sync-status）のみを使う。実ソースとの差分
+  // （/fetch）は「差分を見る」を開いた時に初めて取得する（loadDiffDetail参照）。
   const statusEl = card.querySelector('[data-role="status"]');
   const metaEl = card.querySelector('[data-role="meta"]');
   const errorEl = card.querySelector('[data-role="error"]');
@@ -419,54 +424,76 @@ async function refreshProjectState(card, project) {
 
   errorEl.style.display = 'none';
   diffDetailEl.classList.remove('open');
+  diffDetailEl.dataset.loaded = '';
   card.querySelector('[data-role="diff-label"]').textContent = '差分を見る';
 
-  let savepoints = [];
-  try {
-    const res = await apiFetch(`/api/projects/${project.id}/savepoints`);
-    savepoints = await res.json();
-  } catch (e) {
-    savepoints = [];
-  }
+  const [savepointsResult, statusResult, myRoleResult] = await Promise.allSettled([
+    apiFetch(`/api/projects/${project.id}/savepoints`).then((r) => r.json()),
+    apiFetch(`/api/projects/${project.id}/sync-status`).then((r) => r.json()),
+    apiFetch(`/api/projects/${project.id}/my-role`).then((r) => r.json()),
+  ]);
+
+  const savepoints = savepointsResult.status === 'fulfilled' ? savepointsResult.value : [];
+  const status = statusResult.status === 'fulfilled' ? statusResult.value : { has_changes: null, changed_files: 0, error: null, checked_at: null };
+  const myRole = myRoleResult.status === 'fulfilled' ? myRoleResult.value.role : null;
+  card.dataset.projectRole = myRole || '';
+
   const latest = savepoints[0];
   card.dataset.version = latest ? latest.version_no : 0;
   metaEl.innerHTML = `<span>最終セーブ v${latest ? latest.version_no : 0}・${formatDate(latest ? latest.created_at : null)}</span><span>${escapeHtml(project.department || '')}</span>`;
 
-  const fetchRes = await apiFetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
-  const fetchData = await fetchRes.json();
+  diffToggleBtn.disabled = false;
+  const canEditThis = PROJECT_ROLE_RANK[myRole] >= PROJECT_ROLE_RANK.developer;
+  detectBtn.disabled = !canEditThis;
 
-  if (!fetchData.ok) {
+  if (status.error) {
     statusEl.className = 'status-badge error';
     statusEl.innerHTML = '<span class="dot"></span>認証エラー';
     errorEl.style.display = 'block';
-    errorEl.textContent = fetchData.error ? fetchData.error.message : '不明なエラーです';
-    diffToggleBtn.disabled = true;
-    detectBtn.disabled = true;
+    errorEl.textContent = status.error;
     card.dataset.state = 'error';
     return { state: 'error' };
   }
 
-  const diff = fetchData.diff || [];
-  diffToggleBtn.disabled = false;
-  detectBtn.disabled = !canEdit();
-  diffDetailEl.dataset.diff = JSON.stringify(diff);
-  diffDetailEl.innerHTML = renderDiffTable(diff);
+  if (status.checked_at === null) {
+    statusEl.className = 'status-badge loading';
+    statusEl.innerHTML = '<span class="dot"></span>未チェック';
+    card.dataset.state = 'unknown';
+    return { state: 'unknown' };
+  }
 
-  if (diff.length === 0) {
+  if (!status.has_changes) {
     statusEl.className = 'status-badge ok';
     statusEl.innerHTML = '<span class="dot"></span>変更なし';
     card.dataset.state = 'unchanged';
     return { state: 'unchanged' };
   }
 
-  const added = diff.reduce((sum, f) => sum + (f.added_lines || 0), 0);
-  const deleted = diff.reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
   statusEl.className = 'status-badge warn';
   statusEl.innerHTML = '<span class="dot"></span>変更あり';
-  const metaRow = metaEl;
-  metaRow.innerHTML += `<span style="color:var(--warn-text);"><span class="added">+${added}</span> / <span class="deleted">-${deleted}</span>（直近セーブとの比較）</span>`;
+  metaEl.innerHTML += `<span style="color:var(--warn-text);">${status.changed_files}ファイル変更（${formatDate(status.checked_at)}チェック）</span>`;
   card.dataset.state = 'changed';
   return { state: 'changed' };
+}
+
+async function loadDiffDetail(card, project) {
+  const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
+  if (diffDetailEl.dataset.loaded === '1') {
+    return;
+  }
+  diffDetailEl.innerHTML = '<div style="color:var(--muted);font-size:13px;">読み込み中...</div>';
+  try {
+    const fetchRes = await apiFetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
+    const fetchData = await fetchRes.json();
+    if (!fetchData.ok) {
+      diffDetailEl.innerHTML = `<div style="color:var(--error);font-size:13px;">${escapeHtml(fetchData.error ? fetchData.error.message : '不明なエラーです')}</div>`;
+      return;
+    }
+    diffDetailEl.dataset.loaded = '1';
+    diffDetailEl.innerHTML = renderDiffTable(fetchData.diff || []);
+  } catch (e) {
+    diffDetailEl.innerHTML = '<div style="color:var(--error);font-size:13px;">差分の取得に失敗しました。</div>';
+  }
 }
 
 function wireCardActions(card, project) {
@@ -476,9 +503,12 @@ function wireCardActions(card, project) {
   const detectIconEl = card.querySelector('[data-role="detect-icon"]');
   const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
 
-  diffToggleBtn.addEventListener('click', () => {
+  diffToggleBtn.addEventListener('click', async () => {
     const open = diffDetailEl.classList.toggle('open');
     diffLabelEl.textContent = open ? '差分を閉じる' : '差分を見る';
+    if (open) {
+      await loadDiffDetail(card, project);
+    }
   });
 
   detectBtn.addEventListener('click', async () => {
@@ -638,7 +668,7 @@ async function loadDashboard() {
   } catch (e) {
     currentUserRole = null;
   }
-  if (currentUserRole === 'owner') {
+  if (currentUserRole === 'admin') {
     document.getElementById('auditLogLink').hidden = false;
     document.getElementById('usersLink').hidden = false;
   }
@@ -649,6 +679,9 @@ async function loadDashboard() {
   loadingEl.style.display = 'none';
 
   if (!projects.length) {
+    emptyEl.textContent = currentUserRole === 'admin'
+      ? '登録済みのGASプロジェクトがありません。'
+      : 'アクセス権のあるGASプロジェクトがありません。管理者に台帳画面での個別付与を依頼してください。';
     emptyEl.style.display = 'block';
     renderSummary({ all: 0, changed: 0, unchanged: 0, error: 0 });
     return;

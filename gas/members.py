@@ -12,7 +12,7 @@ from google.cloud import firestore
 from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-from auth.users import VALID_ROLES
+from auth.users import VALID_PROJECT_ROLES
 
 PROJECTS_COLLECTION = "gas_projects"
 MEMBERS_SUBCOLLECTION = "members"
@@ -35,7 +35,7 @@ def list_members(project_id: str) -> list[dict[str, Any]]:
 
 def upsert_member(project_id: str, email: str, role: str, updated_by: str) -> dict[str, Any]:
     """プロジェクトへメンバーを追加・ロール更新する。"""
-    if role not in VALID_ROLES:
+    if role not in VALID_PROJECT_ROLES:
         raise ValueError(f"invalid role: {role}")
     _members_ref(project_id).document(email).set(
         {"role": role, "updated_by": updated_by, "updated_at": SERVER_TIMESTAMP},

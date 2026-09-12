@@ -33,9 +33,23 @@ def create_project(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_projects() -> list[dict[str, Any]]:
-    """GASプロジェクト一覧を取得する。"""
+    """GASプロジェクト一覧を取得する（全件、フィルタなし）。"""
     query = db().collection(COLLECTION).order_by("created_at", direction=firestore.Query.DESCENDING)
     return [serialize_project(snapshot) for snapshot in query.stream()]
+
+
+def list_projects_for_user(email: str, is_admin: bool) -> list[dict[str, Any]]:
+    """ユーザーが閲覧可能なGASプロジェクトのみ返す。
+
+    admin は全件。member はgas_projects/{id}/membersに個別付与されたプロジェクトのみ
+    （2026-09-12、GASごとに権限を付与する方式へ変更）。
+    """
+    projects = list_projects()
+    if is_admin:
+        return projects
+    from auth.users import get_project_role
+
+    return [p for p in projects if get_project_role(p["id"], email) is not None]
 
 
 def get_project(project_id: str) -> dict[str, Any] | None:

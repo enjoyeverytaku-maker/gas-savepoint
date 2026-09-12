@@ -8,7 +8,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from auth.oauth import get_credentials
-from auth.users import ROLE_RANK, get_current_user_email, get_project_role, require_project_role, require_role
+from auth.users import (
+    PROJECT_ROLE_RANK,
+    get_current_user_email,
+    get_project_role,
+    get_user_role,
+    require_project_role,
+    require_role,
+)
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
 from .audit import (
@@ -22,7 +29,7 @@ from .changes import list_changes
 from .diff import calculate_diff, calculate_source_hash
 from .discovery import discover_standalone_projects
 from .members import list_members, remove_member, upsert_member
-from .projects import create_project, get_project, list_projects, set_readme, update_project
+from .projects import create_project, get_project, list_projects, list_projects_for_user, set_readme, update_project
 from .readme_gen import generate_readme
 from .releases import (
     NoChangesToReleaseError,
@@ -34,7 +41,7 @@ from .releases import (
 )
 from .rollback import RollbackConflictError, RollbackTargetNotFoundError, rollback_to_version
 from .savepoints import get_latest_savepoint, list_savepoints
-from .sync import check_all_projects, check_project, verify_scheduler_token
+from .sync import check_all_projects, check_project, get_sync_status, verify_scheduler_token
 
 
 router = APIRouter(prefix="/api")
@@ -87,8 +94,8 @@ class MemberUpsert(BaseModel):
 
 
 @router.post("/projects")
-def post_project(project: ProjectCreate, actor: str = Depends(require_role("owner"))) -> dict[str, Any]:
-    """GASプロジェクトを登録する（Owner限定）。"""
+def post_project(project: ProjectCreate, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
+    """GASプロジェクトを登録する（管理者限定）。"""
     created = create_project(project.model_dump())
     log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")
     try:
@@ -104,13 +111,31 @@ def post_project(project: ProjectCreate, actor: str = Depends(require_role("owne
 
 
 @router.get("/projects")
-def get_projects(actor: str = Depends(require_role("viewer"))) -> list[dict[str, Any]]:
-    """GASプロジェクト一覧を返す。"""
-    return list_projects()
+def get_projects(actor: str = Depends(require_role("member"))) -> list[dict[str, Any]]:
+    """GASプロジェクト一覧を返す（memberは個別付与されたプロジェクトのみ、adminは全件）。"""
+    return list_projects_for_user(actor, get_user_role(actor) == "admin")
+
+
+@router.get("/projects/{project_id}/sync-status")
+def get_project_sync_status(project_id: str, actor: str = Depends(require_project_role("viewer"))) -> dict[str, Any]:
+    """直近の自動/手動チェック結果をFirestoreキャッシュから返す（Apps Script APIを呼ばない軽量版）。
+
+    ダッシュボード初期表示を高速化するため、ページ読み込み時はこちらを使い、
+    最新化したい場合のみユーザー操作でsync-check（生きたAPI呼び出し）を行う
+    （2026-09-12、毎回全プロジェクトへ生きたAPI呼び出しをしていた読み込み遅延を解消）。
+    """
+    status = get_sync_status(project_id)
+    return status or {"has_changes": None, "changed_files": 0, "error": None, "checked_at": None}
+
+
+@router.get("/projects/{project_id}/my-role")
+def get_my_project_role(project_id: str, actor: str = Depends(require_role("member"))) -> dict[str, Any]:
+    """現在のユーザーの指定プロジェクトでのロールを返す（アクセス権が無ければroleはnull、UI側の編集可否判定用）。"""
+    return {"role": get_project_role(project_id, actor)}
 
 
 @router.get("/discovery/standalone")
-def get_discovery_standalone(actor: str = Depends(require_role("owner"))) -> dict[str, Any]:
+def get_discovery_standalone(actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
     """接続済みGoogleアカウントのスタンドアロンGASを自動検出する（F1拡張、Owner限定）。
 
     バインドGAS（スプレッドシート等に紐付くGAS）はこの方法では検出できないため対象外。
@@ -255,7 +280,9 @@ def _require_release_project_role(request: Request, release_id: str, min_role: s
     if release is None:
         raise HTTPException(status_code=404, detail=f"リリース申請が見つかりません: {release_id}")
     role = get_project_role(release["project_id"], email)
-    if ROLE_RANK.get(role, -1) < ROLE_RANK[min_role]:
+    if role is None:
+        raise HTTPException(status_code=403, detail="このGASプロジェクトへのアクセス権がありません（管理者に付与を依頼してください）")
+    if PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK[min_role]:
         raise HTTPException(
             status_code=403,
             detail=f"この操作には{min_role}以上の権限が必要です（現在のロール: {role}）",
@@ -296,9 +323,12 @@ def get_project_changes(project_id: str, actor: str = Depends(require_project_ro
 
 
 @router.get("/changes")
-def get_all_changes(actor: str = Depends(require_role("viewer"))):
-    """全プロジェクト横断の変更検知ログを返す（パートナーズ版changes_admin相当）。"""
-    return list_changes()
+def get_all_changes(actor: str = Depends(require_role("member"))):
+    """全プロジェクト横断の変更検知ログを返す（パートナーズ版changes_admin相当）。memberはアクセス権のあるプロジェクト分のみ。"""
+    if get_user_role(actor) == "admin":
+        return list_changes()
+    accessible_ids = {p["id"] for p in list_projects_for_user(actor, is_admin=False)}
+    return [c for c in list_changes() if c.get("project_id") in accessible_ids]
 
 
 @router.get("/projects/{project_id}/members")
@@ -450,8 +480,8 @@ def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(r
 
 
 @router.get("/audit-logs")
-def get_audit_logs(actor: str = Depends(require_role("owner"))) -> list[dict[str, Any]]:
-    """操作履歴（監査ログ）を新しい順で返す（Owner限定、F7）。"""
+def get_audit_logs(actor: str = Depends(require_role("admin"))) -> list[dict[str, Any]]:
+    """操作履歴（監査ログ）を新しい順で返す（管理者限定、F7）。"""
     return list_operations()
 
 

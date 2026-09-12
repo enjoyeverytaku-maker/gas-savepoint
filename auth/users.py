@@ -25,12 +25,21 @@ COLLECTION = "users"
 IAP_HEADER = "X-Goog-Authenticated-User-Email"
 DEV_HEADER = "X-Debug-User-Email"
 
-# パートナーズ版（members_admin.py/global_members_admin.py）のロール名を踏襲した4段階。
-# owner=プロジェクトの全操作、maintainer=owner相当だがユーザー管理は不可、
-# developer=編集系操作、viewer=閲覧のみ（spec.md §13のAdmin/Editor/Viewerの3段階を
-# 2026-09-12にこの4段階へ移行。旧admin→owner、旧editor→developerに相当）
-ROLE_RANK = {"viewer": 0, "developer": 1, "maintainer": 2, "owner": 3}
-VALID_ROLES = tuple(ROLE_RANK.keys())
+# グローバルロールは2段階のみ（2026-09-12〜）。admin=全GASプロジェクトへ自動的に
+# owner相当でアクセス可能・ユーザー管理/監査ログ/台帳登録が可能。member=デフォルトでは
+# どのGASプロジェクトへのアクセス権も持たず、gas/members.py（gas_projects/{id}/members）で
+# プロジェクトごとに個別付与されて初めてアクセスできる。
+GLOBAL_ROLE_RANK = {"member": 0, "admin": 1}
+VALID_GLOBAL_ROLES = tuple(GLOBAL_ROLE_RANK.keys())
+# 後方互換のためのエイリアス（旧コードがROLE_RANK/VALID_ROLESという名前を参照している場合用）
+ROLE_RANK = GLOBAL_ROLE_RANK
+VALID_ROLES = VALID_GLOBAL_ROLES
+
+# プロジェクト単位のロールは従来通り4段階（パートナーズ版members_admin.py踏襲）。
+# gas/members.pyのプロジェクトメンバーシップ、および本モジュールのget_project_roleが
+# 返す値の語彙。グローバルロールとは別の語彙である点に注意。
+PROJECT_ROLE_RANK = {"viewer": 0, "developer": 1, "maintainer": 2, "owner": 3}
+VALID_PROJECT_ROLES = tuple(PROJECT_ROLE_RANK.keys())
 
 
 def get_current_user_email(request: Request) -> str | None:
@@ -46,13 +55,13 @@ def get_current_user_email(request: Request) -> str | None:
 
 
 def get_user_role(email: str) -> str:
-    """指定ユーザーのグローバルロールを返す。usersコレクションが1件も無い間は誰でもowner扱い（初回導入時のブートストラップ）。"""
+    """指定ユーザーのグローバルロールを返す。usersコレクションが1件も無い間は誰でもadmin扱い（初回導入時のブートストラップ）。"""
     snapshot = db().collection(COLLECTION).document(email).get()
     if snapshot.exists:
-        return (snapshot.to_dict() or {}).get("role", "viewer")
+        return (snapshot.to_dict() or {}).get("role", "member")
     if _is_bootstrap_state():
-        return "owner"
-    return "viewer"
+        return "admin"
+    return "member"
 
 
 def _is_bootstrap_state() -> bool:
@@ -80,25 +89,31 @@ def require_role(min_role: str):
     return _dependency
 
 
-def get_project_role(project_id: str, email: str) -> str:
-    """指定プロジェクトでのユーザーのロールを返す（プロジェクト単位メンバーシップが優先、
-    未設定ならグローバルロールにフォールバック。パートナーズ版members_admin.py相当）。"""
+def get_project_role(project_id: str, email: str) -> str | None:
+    """指定プロジェクトでのユーザーのロールを返す（パートナーズ版members_admin.py相当）。
+
+    グローバルadminは常に全プロジェクトへowner相当でアクセスできる。member は
+    gas_projects/{project_id}/members/{email} に個別付与されていない限りNone
+    （アクセス権なし）を返す——グローバルロールへの単純フォールバックは行わない
+    （2026-09-12、GASごとに権限を付与する方式へ変更）。
+    """
+    if get_user_role(email) == "admin":
+        return "owner"
     snapshot = (
         db().collection("gas_projects").document(project_id).collection("members").document(email).get()
     )
     if snapshot.exists:
         return (snapshot.to_dict() or {}).get("role", "viewer")
-    return get_user_role(email)
+    return None
 
 
 def require_project_role(min_role: str):
     """指定プロジェクトに対して指定ロール以上を要求するFastAPI依存関数を返す。
 
-    パスパラメータ"project_id"を持つルートでのみ使用する。プロジェクト単位の
-    メンバーシップ（gas_projects/{project_id}/members/{email}）があればそちらを
-    優先し、無ければグローバルロール（require_roleと同じget_user_role）を使う。
+    パスパラメータ"project_id"を持つルートでのみ使用する。ロールはget_project_role
+    （グローバルadminは自動owner、それ以外はプロジェクト個別付与のみ）で決まる。
     """
-    if min_role not in ROLE_RANK:
+    if min_role not in PROJECT_ROLE_RANK:
         raise ValueError(f"invalid role: {min_role}")
 
     def _dependency(request: Request) -> str:
@@ -109,7 +124,9 @@ def require_project_role(min_role: str):
         if not project_id:
             raise RuntimeError("require_project_roleはproject_idパスパラメータを持つルートでのみ使用できます")
         role = get_project_role(project_id, email)
-        if ROLE_RANK.get(role, -1) < ROLE_RANK[min_role]:
+        if role is None:
+            raise HTTPException(status_code=403, detail="このGASプロジェクトへのアクセス権がありません（管理者に付与を依頼してください）")
+        if PROJECT_ROLE_RANK[role] < PROJECT_ROLE_RANK[min_role]:
             raise HTTPException(
                 status_code=403,
                 detail=f"この操作には{min_role}以上の権限が必要です（現在のロール: {role}）",
@@ -120,8 +137,8 @@ def require_project_role(min_role: str):
 
 
 def upsert_user(email: str, role: str, updated_by: str) -> dict[str, Any]:
-    """ユーザーのロールを登録・更新する。"""
-    if role not in VALID_ROLES:
+    """ユーザーのグローバルロール（admin/member）を登録・更新する。"""
+    if role not in VALID_GLOBAL_ROLES:
         raise ValueError(f"invalid role: {role}")
     db().collection(COLLECTION).document(email).set(
         {"email": email, "role": role, "updated_by": updated_by, "updated_at": SERVER_TIMESTAMP},

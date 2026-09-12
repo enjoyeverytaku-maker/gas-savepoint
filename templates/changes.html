@@ -93,10 +93,10 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand-row">
+    <a href="/" class="brand-row" style="text-decoration:none;color:inherit;">
       <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
       <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
-    </div>
+    </a>
     <nav>
       <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
       <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
@@ -260,7 +260,7 @@ async function init() {
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
-    if (me.role === 'owner') {
+    if (me.role === 'admin') {
       document.getElementById('auditLogLink').hidden = false;
       document.getElementById('usersLink').hidden = false;
     }

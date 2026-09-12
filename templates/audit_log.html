@@ -78,16 +78,16 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand-row">
+    <a href="/" class="brand-row" style="text-decoration:none;color:inherit;">
       <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
       <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
-    </div>
+    </a>
     <nav>
       <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
       <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
       <a href="/releases"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>セーブ管理</a>
       <a href="/changes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><circle cx="17.5" cy="9" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 11.5c0 3-3 4-6 4.5"></path></svg>変更履歴</a>
-      <a href="/audit-log" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z"></path><path d="M9.2 12.2l2 2 3.6-3.8"></path></svg>監査ログ</a>
+      <a href="/audit-log" class="active" id="auditLogLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z"></path><path d="M9.2 12.2l2 2 3.6-3.8"></path></svg>監査ログ</a>
       <a href="/users" id="usersLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c1-3.2 3.3-5 5.5-5s4.5 1.8 5.5 5"></path><circle cx="17.5" cy="8.5" r="2.4"></circle><path d="M15.5 14c1.8.3 3.4 1.7 4 4.5"></path></svg>ユーザー管理</a>
     </nav>
     <div class="account-box"><div class="inner"><div class="dot-row"><span class="dot"></span><span class="label">接続中のGoogleアカウント</span></div><div class="email" id="accountInfo"></div></div></div>
@@ -157,7 +157,7 @@ async function loadAuditLog() {
 
   if (res.status === 401 || res.status === 403) {
     errorEl.style.display = 'block';
-    errorEl.textContent = '監査ログの閲覧にはOwner権限が必要です。';
+    errorEl.textContent = '監査ログの閲覧には管理者権限が必要です。';
     return;
   }
   if (!res.ok) {
@@ -167,6 +167,7 @@ async function loadAuditLog() {
   }
 
   const logs = await res.json();
+  document.getElementById('auditLogLink').hidden = false;
   document.getElementById('usersLink').hidden = false;
   if (!logs.length) {
     emptyEl.style.display = 'block';

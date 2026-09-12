@@ -90,10 +90,10 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand-row">
+    <a href="/" class="brand-row" style="text-decoration:none;color:inherit;">
       <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
       <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
-    </div>
+    </a>
     <nav>
       <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
       <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
@@ -108,7 +108,7 @@
   <main>
     <div class="eyebrow">Users</div>
     <h1 class="page-title">ユーザー管理</h1>
-    <div class="page-desc">SavePointにログインできる人と、その権限を管理します（プロジェクトごとの権限は台帳画面のメンバー管理で個別に上書きできます）。</div>
+    <div class="page-desc">SavePointにログインできる人と、その権限を管理します。管理者は全GASプロジェクトを操作できます。メンバーはデフォルトではどのGASプロジェクトにもアクセスできず、台帳画面のメンバー管理でプロジェクトごとに個別付与された場合のみアクセスできます。</div>
     <div id="loadingText" class="loading-text">読み込み中...</div>
     <div id="errorText" class="error-message" style="display:none;"></div>
     <div id="content" style="display:none;">
@@ -118,10 +118,8 @@
         <div class="add-row">
           <input type="text" id="newUserEmail" placeholder="追加する人のメールアドレス">
           <select id="newUserRole">
-            <option value="owner">所有者 / owner</option>
-            <option value="maintainer">保守担当 / maintainer</option>
-            <option value="developer">開発者 / developer</option>
-            <option value="viewer" selected>閲覧者 / viewer</option>
+            <option value="admin">管理者 / admin</option>
+            <option value="member" selected>メンバー / member</option>
           </select>
           <button type="button" class="primary" id="addUserBtn">ユーザーを追加</button>
         </div>
@@ -130,10 +128,8 @@
       <div class="role-doc-card">
         <h2>権限の説明</h2>
         <div class="role-doc-list">
-          <div class="role-doc-row"><span class="name">所有者 / owner</span><span class="desc">すべての操作ができます。ユーザー管理・監査ログの閲覧もできます。</span></div>
-          <div class="role-doc-row"><span class="name">保守担当 / maintainer</span><span class="desc">所有者に近い操作ができますが、ユーザー・メンバー管理はできません。</span></div>
-          <div class="role-doc-row"><span class="name">開発者 / developer</span><span class="desc">GASの変更検知・セーブができます。台帳の登録・編集はできません。</span></div>
-          <div class="role-doc-row"><span class="name">閲覧者 / viewer</span><span class="desc">状態やセーブポイント・変更履歴を見るだけで、操作はできません。</span></div>
+          <div class="role-doc-row"><span class="name">管理者 / admin</span><span class="desc">全GASプロジェクトを所有者相当で操作できます。ユーザー管理・監査ログの閲覧・台帳の登録もできます。</span></div>
+          <div class="role-doc-row"><span class="name">メンバー / member</span><span class="desc">デフォルトではどのGASプロジェクトにもアクセスできません。台帳画面のメンバー管理でプロジェクトごとに所有者/保守担当/開発者/閲覧者のいずれかを個別付与されて初めて、そのプロジェクトにアクセスできます。</span></div>
         </div>
       </div>
     </div>
@@ -155,7 +151,7 @@ function showToast(message, isError) {
   setTimeout(() => el.remove(), 4000);
 }
 
-const ROLE_LABELS = { owner: '所有者 / owner', maintainer: '保守担当 / maintainer', developer: '開発者 / developer', viewer: '閲覧者 / viewer' };
+const ROLE_LABELS = { admin: '管理者 / admin', member: 'メンバー / member' };
 let authHeaders = {};
 let currentUserEmail = '';
 
@@ -210,7 +206,7 @@ async function init() {
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
-    if (me.role === 'owner') {
+    if (me.role === 'admin') {
       document.getElementById('auditLogLink').hidden = false;
       document.getElementById('usersLink').hidden = false;
     }
@@ -225,7 +221,7 @@ async function init() {
   } catch (e) {
     loadingEl.style.display = 'none';
     errorEl.style.display = 'block';
-    errorEl.textContent = 'ユーザー管理にはOwner権限が必要です。';
+    errorEl.textContent = 'ユーザー管理には管理者権限が必要です。';
     return;
   }
 

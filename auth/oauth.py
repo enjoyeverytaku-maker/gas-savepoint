@@ -20,6 +20,7 @@ from google.cloud import firestore
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 
+from firestore_client import db as _shared_db
 from . import secrets
 
 # script.projects はGAS本体の読み書きに必要な最小スコープ（読み取り専用に分離する場合は
@@ -48,7 +49,10 @@ _credentials_lock = threading.Lock()
 
 
 def _db() -> firestore.Client:
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
+    # プロセス共有のFirestoreシングルトンを使う（firestore_client.py参照）。
+    # 以前はここだけ呼び出しごとに新規Clientを生成しており、gRPCチャンネルの
+    # 大量生成によるクラッシュの原因の一つだった（2026-09-12修正）。
+    return _shared_db()
 
 
 def _client_config() -> dict:

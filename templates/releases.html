@@ -189,10 +189,10 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand-row">
+    <a href="/" class="brand-row" style="text-decoration:none;color:inherit;">
       <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
       <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
-    </div>
+    </a>
     <nav>
       <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
       <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
@@ -259,7 +259,21 @@ function showConfirmDialog({ title, body, facts, confirmLabel, onConfirm }) {
 
 let authHeaders = {};
 let currentUserRole = null;
+let currentProjectRole = null;
 let projectsCache = [];
+
+// プロジェクト単位ロールの序列（グローバルロールadmin/memberとは別語彙）。
+const PROJECT_ROLE_RANK = { viewer: 0, developer: 1, maintainer: 2, owner: 3 };
+
+async function setCurrentProjectRole(projectId) {
+  try {
+    const res = await apiFetch(`/api/projects/${projectId}/my-role`);
+    const data = await res.json();
+    currentProjectRole = data.role || null;
+  } catch (e) {
+    currentProjectRole = null;
+  }
+}
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -460,6 +474,7 @@ function wireTabbar(root, projectId) {
 
 // 2. 新規セーブ画面
 async function renderNewReleaseView(root, projectId) {
+  await setCurrentProjectRole(projectId);
   const project = projectsCache.find((p) => p.id === projectId) || (await (await apiFetch(`/api/projects/${projectId}`)).json());
   const savepoints = await (await apiFetch(`/api/projects/${projectId}/savepoints`)).json();
   const latestVersion = savepoints[0] ? savepoints[0].version_no : 0;
@@ -610,6 +625,7 @@ async function renderDetailView(root, releaseId) {
     return;
   }
   const release = await res.json();
+  await setCurrentProjectRole(release.project_id);
   const project = projectsCache.find((p) => p.id === release.project_id) || (await (await apiFetch(`/api/projects/${release.project_id}`)).json());
 
   const changesRes = await apiFetch(`/api/projects/${release.project_id}/changes`);
@@ -730,7 +746,7 @@ async function renderSummaryView(root, releaseId) {
 }
 
 function canEdit() {
-  return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
+  return PROJECT_ROLE_RANK[currentProjectRole] >= PROJECT_ROLE_RANK.developer;
 }
 
 async function init() {
@@ -749,7 +765,7 @@ async function init() {
   } catch (e) {
     currentUserRole = null;
   }
-  if (currentUserRole === 'owner') {
+  if (currentUserRole === 'admin') {
     document.getElementById('auditLogLink').hidden = false;
     document.getElementById('usersLink').hidden = false;
   }
