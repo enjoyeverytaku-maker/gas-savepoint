@@ -174,7 +174,10 @@ function renderUsers(users) {
       <select data-role="role-select" ${u.email === currentUserEmail ? 'disabled title="自分自身のロールはここでは変更できません"' : ''}>
         ${Object.keys(ROLE_LABELS).map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('')}
       </select>
-      <span style="text-align:right;"><button type="button" class="danger" data-role="delete-user" ${u.email === currentUserEmail ? 'disabled title="自分自身は削除できません"' : ''}>削除</button></span>
+      <span style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" data-role="invite-user">招待メールを送る</button>
+        <button type="button" class="danger" data-role="delete-user" ${u.email === currentUserEmail ? 'disabled title="自分自身は削除できません"' : ''}>削除</button>
+      </span>
     </div>
   `).join('');
 }
@@ -244,17 +247,33 @@ async function init() {
   });
 
   document.getElementById('userBody').addEventListener('click', async (event) => {
-    const btn = event.target.closest('[data-role="delete-user"]');
-    if (!btn) return;
-    const email = btn.closest('.user-row').dataset.email;
-    if (!window.confirm(`${email} を削除しますか？（このユーザーは以後ログインできなくなります）`)) return;
-    const res = await apiFetch(`/api/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
-    if (!res.ok) {
-      showToast('削除に失敗しました。', true);
+    const deleteBtn = event.target.closest('[data-role="delete-user"]');
+    if (deleteBtn) {
+      const email = deleteBtn.closest('.user-row').dataset.email;
+      if (!window.confirm(`${email} を削除しますか？（このユーザーは以後ログインできなくなります）`)) return;
+      const res = await apiFetch(`/api/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        showToast('削除に失敗しました。', true);
+        return;
+      }
+      showToast(`${email} を削除しました。`);
+      await loadUsers();
       return;
     }
-    showToast(`${email} を削除しました。`);
-    await loadUsers();
+
+    const inviteBtn = event.target.closest('[data-role="invite-user"]');
+    if (inviteBtn) {
+      const email = inviteBtn.closest('.user-row').dataset.email;
+      inviteBtn.disabled = true;
+      const res = await apiFetch(`/api/users/${encodeURIComponent(email)}/invite`, { method: 'POST' });
+      const data = await res.json();
+      inviteBtn.disabled = false;
+      if (!data.ok) {
+        showToast('招待メールの送信に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+        return;
+      }
+      showToast(`${email} へ招待メールを送信しました。`);
+    }
   });
 
   document.getElementById('addUserBtn').addEventListener('click', async () => {

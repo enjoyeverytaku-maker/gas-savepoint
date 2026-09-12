@@ -27,13 +27,16 @@ from . import secrets
 # script.projects.readonlyへの変更を検討、docs/general_saas_roadmap.md §3参照）。
 # drive.metadata.readonly + drive.scripts はスタンドアロンGAS自動検出（F1拡張）に必要
 # （gas/discovery.pyがDrive APIでmimeType=application/vnd.google-apps.scriptのファイルを
-# 検索する。既存プロトタイプのdiscover_apps_script_projects相当）
+# 検索する。既存プロトタイプのdiscover_apps_script_projects相当）。
+# gmail.send はユーザー招待メール（F6拡張）送信専用。受信・既存メールの読み取りは一切行わない
+# 最小スコープ（gmail.readonly等は要求しない）。
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/script.projects",
     "https://www.googleapis.com/auth/drive.metadata.readonly",
     "https://www.googleapis.com/auth/drive.scripts",
+    "https://www.googleapis.com/auth/gmail.send",
 ]
 
 OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8080/oauth/callback")

@@ -11,6 +11,9 @@ GAS（Google Apps Script）を業務利用する非エンジニア企業向け�
 ```bash
 pip install -r requirements.txt
 export GCP_PROJECT=<デプロイ先のGCPプロジェクトID>
+export VERTEX_LOCATION=asia-northeast1  # 省略時はus-central1。使用モデル(gas/vertex_client.py::GEMINI_MODEL)が
+                                          # 利用可能なリージョンを指定すること（モデルごとに提供リージョンが異なる。
+                                          # 2026-09-13時点、gemini-3.5-flashはasia-northeast1では動作するがus-central1では404）
 export OAUTH_REDIRECT_URI=http://localhost:8080/oauth/callback  # 本番はCloud RunのURLに変更
 export OAUTHLIB_INSECURE_TRANSPORT=1  # ローカル(http://localhost)のみ。google-auth-oauthlibはデフォルトでHTTPS必須のため。本番(Cloud Run=https)では絶対に設定しない
 uvicorn main:app --reload

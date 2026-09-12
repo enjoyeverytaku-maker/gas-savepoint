@@ -11,12 +11,14 @@ from auth import oauth
 from auth.users import (
     delete_user,
     get_current_user_email,
+    get_user,
     get_user_role,
     list_users,
     require_role,
     upsert_user,
 )
 from gas.audit import ACTION_LOGIN, log_operation
+from gas.invitations import send_invitation_email
 from gas.routes import router as gas_router
 
 def _refuse_dev_mode_on_cloud_run() -> None:
@@ -138,14 +140,45 @@ def get_me(request: Request) -> dict[str, Any]:
     return {"authenticated": True, "email": email, "role": role}
 
 
+def _app_base_url(request: Request) -> str:
+    """招待メールに載せるアプリのURL。本番はAPP_BASE_URL（Cloud RunのIAP経由URL等）を優先し、
+    未設定時はリクエストから推定する（uvicornにproxy-headers未設定だとscheme判定がhttpになりうるため暫定）。"""
+    override = os.environ.get("APP_BASE_URL")
+    if override:
+        return override.rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+def _try_send_invitation(email: str, role: str, app_base_url: str) -> None:
+    """招待メール送信をベストエフォートで行う（失敗してもユーザー登録自体は成功させる）。"""
+    try:
+        send_invitation_email(email, role, app_base_url)
+    except Exception:
+        pass
+
+
 @app.post("/api/users")
 def post_user(body: UserUpsert, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """ユーザーのロールを登録・更新する（Owner限定）。"""
+    """ユーザーのロールを登録・更新する（管理者限定）。登録成功時、招待メールをベストエフォートで送信する。"""
     try:
         user = upsert_user(email=body.email, role=body.role, updated_by=actor)
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"ok": False, "error": {"type": "invalid_role", "message": str(exc)}})
+    _try_send_invitation(body.email, body.role, _app_base_url(request))
     return {"ok": True, "user": user}
+
+
+@app.post("/api/users/{email}/invite")
+def post_user_invite(email: str, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
+    """招待メールを再送する（管理者限定）。"""
+    user = get_user(email)
+    if user is None:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": "ユーザーが見つかりません"}})
+    try:
+        send_invitation_email(email, user["role"], _app_base_url(request))
+    except Exception as exc:  # noqa: BLE001 - メール送信失敗の理由を画面へそのまま返すため広く捕捉
+        return JSONResponse(status_code=200, content={"ok": False, "error": {"type": "invitation_failed", "message": str(exc)}})
+    return {"ok": True}
 
 
 @app.get("/api/users")

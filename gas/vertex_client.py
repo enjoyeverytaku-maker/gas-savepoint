@@ -15,8 +15,10 @@ import threading
 
 from google import genai
 
-GEMINI_MODEL = "gemini-2.5-flash"
-VERTEX_LOCATION = "us-central1"
+GEMINI_MODEL = "gemini-3.5-flash"
+# 東京リージョン等へデプロイする場合はVERTEX_LOCATION環境変数で上書きする
+# （2026-09-13、萬年へのデプロイでasia-northeast1利用を確認済み）。
+VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "us-central1")
 
 _client: genai.Client | None = None
 _lock = threading.Lock()
