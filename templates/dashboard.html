@@ -224,7 +224,7 @@
       </div>
 
       <div class="release-panel" id="releasePanel" style="display:none;">
-        <h2 class="section-title">レビュー待ちの変更</h2>
+        <h2 class="section-title">未セーブの変更</h2>
         <div class="release-list" id="releaseList"></div>
       </div>
 
@@ -296,9 +296,9 @@ function renderCard(project) {
     <div class="actions">
       <button type="button" data-role="diff-toggle" disabled>差分を見る</button>
       <button type="button" data-role="detect" disabled>変更を検知</button>
-      <a href="/changes#${project.id}" class="primary">変更一覧・レビューへ →</a>
+      <a href="/releases#new/${project.id}" class="primary">セーブ画面へ →</a>
     </div>
-    <div class="action-hint">GASの保存内容は編集した瞬間に反映されます。ここでの操作は「その変更を正式な記録として認めるかどうか」を管理するものです。変更を検知＝今すぐチェックして変更履歴に記録（定期チェックを待たずに反映）／変更一覧・レビュー＝検知済みの変更をレビュー・承認し、セーブポイントとしてまとめる</div>
+    <div class="action-hint">GASの保存内容は編集した瞬間に反映されます。ここでの操作は「その変更を正式な記録として残すかどうか」を管理するものです。変更を検知＝今すぐチェックして変更履歴に記録（定期チェックを待たずに反映）／セーブ＝検知済みの変更をまとめてセーブポイントとして記録（AIが影響レビューを自動生成）</div>
     <div class="diff-detail" data-role="diff-detail"></div>
   `;
   return card;
@@ -393,7 +393,7 @@ function wireCardActions(card, project) {
       if (!data.ok) {
         alert('検知に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
       } else if (data.change) {
-        alert('変更を検知し、変更一覧に記録しました。「変更一覧・レビューへ」からレビューしてください。');
+        alert('変更を検知し、変更履歴に記録しました。「セーブ画面へ」からセーブできます。');
       } else {
         alert('前回検知した内容から変わっていません。');
       }
@@ -421,12 +421,6 @@ function updateSummaryFromCards() {
   summaryEl.style.display = 'grid';
 }
 
-const CHANGE_STATUS_LABELS = {
-  unreviewed: '未レビュー',
-  reviewed: 'レビュー済み（承認待ち）',
-  changes_requested: '要修正',
-};
-
 function renderChangeItem(change) {
   const project = projectsById[change.project_id];
   const projectName = project ? project.project_name : change.project_id;
@@ -438,12 +432,12 @@ function renderChangeItem(change) {
   item.innerHTML = `
     <div class="row1">
       <div>
-        <div class="project-name">${escapeHtml(projectName)}　<span class="status-badge warn" style="font-size:11px;">${CHANGE_STATUS_LABELS[change.display_status] || change.display_status}</span></div>
+        <div class="project-name">${escapeHtml(projectName)}　<span class="status-badge warn" style="font-size:11px;">未セーブ</span></div>
         <div class="meta">検知日時：${formatDate(change.detected_at)}　変更量：+${addedTotal} / -${deletedTotal}</div>
       </div>
     </div>
     <div class="actions">
-      <a href="/changes#${change.project_id}" class="primary">確認してレビューする →</a>
+      <a href="/releases#new/${change.project_id}" class="primary">セーブ画面へ →</a>
     </div>
   `;
   return item;
@@ -454,7 +448,7 @@ async function refreshReleasePanel() {
   try {
     const res = await apiFetch('/api/changes');
     const data = await res.json();
-    changes = Array.isArray(data) ? data.filter((c) => c.display_status !== 'approved' && c.display_status !== 'released') : [];
+    changes = Array.isArray(data) ? data.filter((c) => c.display_status === 'unreleased') : [];
   } catch (e) {
     changes = [];
   }
@@ -465,7 +459,7 @@ async function refreshReleasePanel() {
     releasePanelEl.style.display = 'block';
     const empty = document.createElement('div');
     empty.className = 'release-empty';
-    empty.textContent = 'レビュー待ちの変更はありません。';
+    empty.textContent = '未セーブの変更はありません。';
     releaseListEl.appendChild(empty);
     return;
   }

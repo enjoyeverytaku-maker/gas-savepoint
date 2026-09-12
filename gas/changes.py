@@ -1,20 +1,14 @@
-"""変更検知・レビュー・承認（パートナーズ版changes_admin相当）。
+"""変更検知（パートナーズ版changes_admin相当の検知ログ部分）。
 
-パートナーズ版の実コードを確認した結果、GASの仕様上「セーブポイント」という
-レビュー不要の即時保存は存在せず、実際には以下の一本のパイプラインだった:
-
-  自動検知（sync）が変更を検知するたびに`changes`ドキュメントを作成
-  → レビュー（reviewed / changes_requested）
-  → 承認（reviewed済みのみ承認可）
-  → リリース作成時、未リリースchangesが全件承認済みでなければブロック
-
-これは「承認するまで本番反映を止める」機能ではなく（GASはエディタ保存時点で
-即座に反映されるため技術的に不可能）、変更を正式な記録として認める前に
-第三者レビューを挟む内部統制としての事後承認である。
+以前は変更ごとにレビュー(reviewed/changes_requested)・承認(approved)という
+人間の手動ゲートを設けていたが、会長より「セーブポイントを作る際にそれまでの
+変更の影響についてAIレビューしてくれるように」との指示を受け、個々の変更への
+手動レビュー・承認は廃止した。以降このモジュールは「いつ・何が変わったか」を
+検知して記録するだけの受動的なログであり、実際の影響レビューはセーブ
+（gas/releases.py::create_release）時にAI（gas/ai_review.py）がまとめて行う。
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,26 +16,16 @@ from google.cloud import firestore
 from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-from .audit import ACTION_CHANGE_APPROVE, ACTION_CHANGE_DETECT, ACTION_CHANGE_REVIEW, log_operation
+from .audit import ACTION_CHANGE_DETECT, log_operation
 from .diff import calculate_diff, calculate_source_hash
 
 
 COLLECTION = "changes"
 
-REVIEW_STATUSES = ("unreviewed", "reviewed", "changes_requested")
-APPROVAL_STATUSES = ("pending", "approved")
-
 
 @dataclass
 class ChangeNotFoundError(Exception):
     """変更レコードが存在しない。"""
-
-    message: str
-
-
-@dataclass
-class ChangeNotReviewedError(Exception):
-    """レビュー未完了の変更は承認できない。"""
 
     message: str
 
@@ -82,14 +66,6 @@ def detect_change(project_id: str, source_files: list[dict[str, Any]]) -> dict[s
         "previous_hash": baseline_hash,
         "diff": diff,
         "detected_at": SERVER_TIMESTAMP,
-        "review_status": "unreviewed",
-        "reviewed_by": None,
-        "reviewed_at": None,
-        "review_comment": None,
-        "approval_status": "pending",
-        "approved_by": None,
-        "approved_at": None,
-        "approval_comment": None,
         "release_status": "unreleased",
         "release_id": None,
     }
@@ -122,64 +98,6 @@ def get_change(change_id: str) -> dict[str, Any] | None:
     return serialize_change(snapshot)
 
 
-def review_change(change_id: str, decision: str, comment: str, reviewed_by: str) -> dict[str, Any]:
-    """変更をレビューする（reviewed / changes_requested）。
-
-    changes_requestedの場合、過去の承認は無効化する（パートナーズ版と同様）。
-    """
-    if decision not in ("reviewed", "changes_requested"):
-        raise ValueError(f"invalid review decision: {decision}")
-
-    change = get_change(change_id)
-    if change is None:
-        raise ChangeNotFoundError(f"変更が見つかりません: {change_id}")
-
-    update: dict[str, Any] = {
-        "review_status": decision,
-        "reviewed_by": reviewed_by,
-        "reviewed_at": SERVER_TIMESTAMP,
-        "review_comment": comment,
-    }
-    if decision == "changes_requested":
-        update.update(
-            {
-                "approval_status": "pending",
-                "approved_by": None,
-                "approved_at": None,
-                "approval_comment": None,
-            }
-        )
-    db().collection(COLLECTION).document(change_id).update(update)
-    updated = get_change(change_id)
-    if updated is None:
-        raise ChangeNotFoundError(f"変更が見つかりません: {change_id}")
-    log_operation(action=ACTION_CHANGE_REVIEW, project_id=change["project_id"], user=reviewed_by, result=decision, details={"change_id": change_id, "comment": comment})
-    return updated
-
-
-def approve_change(change_id: str, comment: str, approved_by: str) -> dict[str, Any]:
-    """レビュー済みの変更を承認する（reviewed以外は承認不可）。"""
-    change = get_change(change_id)
-    if change is None:
-        raise ChangeNotFoundError(f"変更が見つかりません: {change_id}")
-    if change.get("review_status") != "reviewed":
-        raise ChangeNotReviewedError(f"レビュー済みになっていない変更は承認できません: {change_id}")
-
-    db().collection(COLLECTION).document(change_id).update(
-        {
-            "approval_status": "approved",
-            "approved_by": approved_by,
-            "approved_at": SERVER_TIMESTAMP,
-            "approval_comment": comment,
-        }
-    )
-    updated = get_change(change_id)
-    if updated is None:
-        raise ChangeNotFoundError(f"変更が見つかりません: {change_id}")
-    log_operation(action=ACTION_CHANGE_APPROVE, project_id=change["project_id"], user=approved_by, result="success", details={"change_id": change_id, "comment": comment})
-    return updated
-
-
 def mark_changes_released(change_ids: list[str], release_id: str) -> None:
     """バンドルされたchangesをリリース済みとして記録する。"""
     batch = db().batch()
@@ -196,16 +114,8 @@ def mark_changes_released(change_ids: list[str], release_id: str) -> None:
 
 
 def display_status(change: dict[str, Any]) -> str:
-    """一覧・フィルタ表示用の統合ステータス。"""
-    if change.get("release_status") == "released":
-        return "released"
-    if change.get("approval_status") == "approved":
-        return "approved"
-    if change.get("review_status") == "changes_requested":
-        return "changes_requested"
-    if change.get("review_status") == "reviewed":
-        return "reviewed"
-    return "unreviewed"
+    """一覧表示用のステータス。"""
+    return "released" if change.get("release_status") == "released" else "unreleased"
 
 
 def serialize_change(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
@@ -213,8 +123,6 @@ def serialize_change(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
     data = snapshot.to_dict() or {}
     data["id"] = snapshot.id
     data["detected_at"] = _to_iso(data.get("detected_at"))
-    data["reviewed_at"] = _to_iso(data.get("reviewed_at"))
-    data["approved_at"] = _to_iso(data.get("approved_at"))
     data["released_at"] = _to_iso(data.get("released_at"))
     data["display_status"] = display_status(data)
     return data

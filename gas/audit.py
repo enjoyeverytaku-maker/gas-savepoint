@@ -1,7 +1,6 @@
 """操作履歴（監査ログ）の記録・読み取り（F7、spec.md §15）。"""
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from google.cloud import firestore
@@ -18,8 +17,6 @@ ACTION_ROLLBACK = "ROLLBACK"
 ACTION_VERSION_CREATE = "VERSION_CREATE"
 ACTION_RELEASE_REQUEST = "RELEASE_REQUEST"
 ACTION_CHANGE_DETECT = "CHANGE_DETECT"
-ACTION_CHANGE_REVIEW = "CHANGE_REVIEW"
-ACTION_CHANGE_APPROVE = "CHANGE_APPROVE"
 
 
 def log_operation(

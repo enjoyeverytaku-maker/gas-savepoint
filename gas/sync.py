@@ -8,7 +8,6 @@ Cloud Scheduler経由で定期実行され、登録済み全GASプロジェク�
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import HTTPException, Request

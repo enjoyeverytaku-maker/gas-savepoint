@@ -18,21 +18,13 @@ from .audit import (
     list_operations,
     log_operation,
 )
-from .changes import (
-    ChangeNotFoundError,
-    ChangeNotReviewedError,
-    approve_change,
-    get_change,
-    list_changes,
-    review_change,
-)
+from .changes import list_changes
 from .diff import calculate_diff, calculate_source_hash
 from .discovery import discover_standalone_projects
 from .members import list_members, remove_member, upsert_member
 from .projects import create_project, get_project, list_projects, set_readme, update_project
 from .readme_gen import generate_readme
 from .releases import (
-    ChangesNotApprovedError,
     NoChangesToReleaseError,
     ReleaseNotFoundError,
     create_release,
@@ -84,21 +76,6 @@ class ReleaseCreate(BaseModel):
 
     requested_by: str = Field(default="unknown")
     comment: str = ""
-
-
-class ChangeReview(BaseModel):
-    """変更レビューリクエスト（reviewed / changes_requested）。"""
-
-    decision: str
-    comment: str = ""
-    performed_by: str = Field(default="unknown")
-
-
-class ChangeApproval(BaseModel):
-    """変更承認リクエスト。"""
-
-    comment: str = ""
-    performed_by: str = Field(default="unknown")
 
 
 class MemberUpsert(BaseModel):
@@ -305,12 +282,11 @@ def get_savepoints(project_id: str, actor: str = Depends(require_project_role("v
 
 @router.get("/projects/{project_id}/changes")
 def get_project_changes(project_id: str, actor: str = Depends(require_project_role("viewer"))):
-    """指定プロジェクトの変更一覧を返す（パートナーズ版changes_admin相当、T22）。
+    """指定プロジェクトの変更検知ログを返す（パートナーズ版changes_admin相当、T22）。
 
-    自動検知（sync）が作成した変更をレビュー状態（unreviewed/reviewed/
-    changes_requested）・承認状態・リリース状態つきで一覧表示する。
-    T10の監査ログ（誰が何を操作したか）とは別の、変更そのものを追跡・
-    レビューする画面向け。
+    自動検知（sync）が作成した変更を検知日時・セーブ状態つきで一覧表示する
+    受動的なログ。影響レビューはAIがセーブ時にまとめて行う（gas/ai_review.py）ため、
+    ここに人間のレビュー・承認操作は無い。T10の監査ログ（誰が何を操作したか）とは別。
     """
     project = get_project(project_id)
     if project is None:
@@ -320,55 +296,8 @@ def get_project_changes(project_id: str, actor: str = Depends(require_project_ro
 
 @router.get("/changes")
 def get_all_changes(actor: str = Depends(require_role("viewer"))):
-    """全プロジェクト横断の変更一覧を返す（パートナーズ版changes_admin相当）。"""
+    """全プロジェクト横断の変更検知ログを返す（パートナーズ版changes_admin相当）。"""
     return list_changes()
-
-
-def _require_change_project_role(request: Request, change_id: str, min_role: str) -> str:
-    """変更が属するプロジェクトに対して指定ロール以上を要求する。
-
-    /changes/{change_id}/... にはproject_idがパスに含まれないため、
-    _require_release_project_roleと同様に先にchangeを引いて解決する。
-    """
-    email = get_current_user_email(request)
-    if email is None:
-        raise HTTPException(status_code=401, detail="認証されていません")
-    change = get_change(change_id)
-    if change is None:
-        raise HTTPException(status_code=404, detail=f"変更が見つかりません: {change_id}")
-    role = get_project_role(change["project_id"], email)
-    if ROLE_RANK.get(role, -1) < ROLE_RANK[min_role]:
-        raise HTTPException(
-            status_code=403,
-            detail=f"この操作には{min_role}以上の権限が必要です（現在のロール: {role}）",
-        )
-    return email
-
-
-@router.post("/changes/{change_id}/review")
-def post_change_review(change_id: str, body: ChangeReview, request: Request):
-    """変更をレビューする（reviewed / changes_requested、対象プロジェクトDeveloper以上）。"""
-    _require_change_project_role(request, change_id, "developer")
-    if body.decision not in ("reviewed", "changes_requested"):
-        return JSONResponse(status_code=400, content={"ok": False, "error": {"type": "invalid_decision", "message": "decisionはreviewedまたはchanges_requestedを指定してください"}})
-    try:
-        change = review_change(change_id, body.decision, body.comment, body.performed_by)
-    except ChangeNotFoundError as exc:
-        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
-    return {"ok": True, "change": change}
-
-
-@router.post("/changes/{change_id}/approve")
-def post_change_approve(change_id: str, body: ChangeApproval, request: Request):
-    """レビュー済みの変更を承認する（対象プロジェクトMaintainer以上）。"""
-    _require_change_project_role(request, change_id, "maintainer")
-    try:
-        change = approve_change(change_id, body.comment, body.performed_by)
-    except ChangeNotFoundError as exc:
-        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
-    except ChangeNotReviewedError as exc:
-        return JSONResponse(status_code=409, content={"ok": False, "error": {"type": "not_reviewed", "message": str(exc)}})
-    return {"ok": True, "change": change}
 
 
 @router.get("/projects/{project_id}/members")
@@ -395,13 +324,14 @@ def delete_project_member(project_id: str, email: str, actor: str = Depends(requ
 
 
 @router.post("/projects/{project_id}/releases")
-def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(require_project_role("maintainer"))):
-    """未リリースの変更（全件承認済み）をまとめてリリースとして記録する（プロジェクトMaintainer以上）。
+def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(require_project_role("developer"))):
+    """未セーブの変更をまとめてセーブポイントとして記録する（プロジェクトDeveloper以上）。
 
-    リリース自体に承認/却下という別工程はない（gas/releases.py参照）。
+    人間による承認ゲートは無く、代わりに前回セーブポイントからの累積差分を
+    AIがレビューし参考情報として記録に添付する（gas/releases.py参照）。
     """
     try:
-        release = create_release(
+        result = create_release(
             project_id=project_id,
             requested_by=body.requested_by,
             comment=body.comment,
@@ -412,14 +342,6 @@ def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(requ
         return JSONResponse(
             status_code=200,
             content={"ok": False, "error": {"type": "no_changes", "message": str(exc)}},
-        )
-    except ChangesNotApprovedError as exc:
-        return JSONResponse(
-            status_code=200,
-            content={
-                "ok": False,
-                "error": {"type": "changes_not_approved", "message": exc.message, "blocked_count": exc.blocked_count},
-            },
         )
     except AppsScriptAPIError as exc:
         return JSONResponse(
@@ -439,7 +361,7 @@ def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(requ
             status_code=200,
             content={"ok": False, "error": {"type": "authentication_or_request_error", "message": str(exc)}},
         )
-    return {"ok": True, "release": release}
+    return {"ok": True, "release": result["release"]}
 
 
 @router.get("/projects/{project_id}/releases")

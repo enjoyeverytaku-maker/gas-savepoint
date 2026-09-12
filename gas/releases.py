@@ -1,16 +1,15 @@
-"""リリース作成（F5、パートナーズ版releases_admin相当）。
+"""セーブ（パートナーズ版releases_admin相当、社内呼称「セーブポイント作成」）。
 
-パートナーズ版の実コードを確認した結果、「リリース」自体に承認/却下という
-別工程は存在しない。承認が必要なのは個々の変更（gas/changes.py）であり、
-リリースはプロジェクトの未リリースchangesが全件承認済みであることを条件に
-まとめて記録する一括操作（作成した時点で確定）。作成直前に現在のGASを
-再取得し、その場で新たな変更が検知されればリリースをブロックする
-（会長確認済み: これは「承認するまで本番反映を止める」機能ではなく、
-GASは保存時点で即座に反映されるため、事後の正式記録としての統制）。
+以前は個々の変更（gas/changes.py）への人間のレビュー・承認が全件揃うことを
+セーブの条件にしていたが、会長より「セーブポイントを作る際にそれまでの変更の
+影響についてAIレビューしてくれるように」との指示を受け、人間の承認ゲートは
+廃止した。代わりに、前回セーブポイントからの累積差分をAI（gas/ai_review.py）
+にレビューさせ、参考情報としてセーブ記録に添付する（生成失敗時もセーブ自体は
+止めないベストエフォート運用。AIレビューが「リスク高」と示しても保存はブロック
+しない）。
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,11 +19,12 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from auth.oauth import get_credentials
 
+from .ai_review import generate_change_review
 from .apps_script import fetch_source_files
 from .audit import ACTION_RELEASE_REQUEST, log_operation
 from .changes import detect_change, get_unreleased_changes, mark_changes_released
 from .projects import get_project
-from .savepoints import create_savepoint
+from .savepoints import create_savepoint, get_latest_savepoint
 
 
 COLLECTION = "releases"
@@ -39,45 +39,34 @@ class ReleaseNotFoundError(Exception):
 
 @dataclass
 class NoChangesToReleaseError(Exception):
-    """リリース対象の未リリース変更が存在しない。"""
+    """セーブ対象の未セーブ変更が存在しない。"""
 
     message: str
-
-
-@dataclass
-class ChangesNotApprovedError(Exception):
-    """未承認の変更が残っているためリリースできない。"""
-
-    message: str
-    blocked_count: int
 
 
 def create_release(project_id: str, requested_by: str, comment: str = "") -> dict[str, Any]:
-    """未リリースの変更（全件承認済み）をまとめて正式なリリースとして記録する。"""
+    """未セーブの変更をまとめてセーブポイントとして記録する。"""
     project = get_project(project_id)
     if project is None:
         raise ReleaseNotFoundError(f"GASプロジェクトが見つかりません: {project_id}")
 
-    # リリース直前に現在のGASを再取得し、レビューされていない駆け込み変更があれば検知する
-    # （パートナーズ版のsync_script呼び出しと同じ意図）。
+    previous_savepoint = get_latest_savepoint(project_id)
+    previous_files = previous_savepoint["source_files"] if previous_savepoint else []
+
+    # セーブ直前に現在のGASを再取得し、まだ検知していない駆け込み変更があれば検知しておく
     source_files = fetch_source_files(project["script_id"], get_credentials())
     detect_change(project_id, source_files)
 
     changes = get_unreleased_changes(project_id)
     if not changes:
-        raise NoChangesToReleaseError(f"リリース対象の未リリース変更がありません: {project_id}")
+        raise NoChangesToReleaseError(f"セーブ対象の未セーブ変更がありません: {project_id}")
 
-    blocked = [c for c in changes if c.get("approval_status") != "approved"]
-    if blocked:
-        raise ChangesNotApprovedError(
-            message=f"未承認の変更が{len(blocked)}件残っています。すべて承認してからリリースしてください。",
-            blocked_count=len(blocked),
-        )
+    ai_review = _try_generate_review(project["project_name"], previous_files, source_files)
 
     savepoint = create_savepoint(
         project_id=project_id,
         source_files=source_files,
-        comment=comment or "リリース",
+        comment=comment or "セーブ",
         created_by=requested_by,
     )
     change_ids = [c["id"] for c in changes]
@@ -90,6 +79,7 @@ def create_release(project_id: str, requested_by: str, comment: str = "") -> dic
         "change_ids": change_ids,
         "change_count": len(change_ids),
         "comment": comment,
+        "ai_review": ai_review,
         "requested_by": requested_by,
         "created_at": SERVER_TIMESTAMP,
     }
@@ -108,22 +98,30 @@ def create_release(project_id: str, requested_by: str, comment: str = "") -> dic
 
 
 def list_releases(project_id: str) -> list[dict[str, Any]]:
-    """指定プロジェクトのリリース履歴を新しい順で取得する。"""
+    """指定プロジェクトのセーブポイント履歴を新しい順で取得する。"""
     query = db().collection(COLLECTION).where("project_id", "==", project_id)
     releases = [serialize_release(snapshot) for snapshot in query.stream()]
     return sorted(releases, key=lambda item: item.get("created_at") or "", reverse=True)
 
 
 def get_release(release_id: str) -> dict[str, Any] | None:
-    """リリースを1件取得する。"""
+    """セーブポイントを1件取得する。"""
     snapshot = db().collection(COLLECTION).document(release_id).get()
     if not snapshot.exists:
         return None
     return serialize_release(snapshot)
 
 
+def _try_generate_review(project_name: str, previous_files: list[dict[str, Any]], current_files: list[dict[str, Any]]) -> str | None:
+    """AIレビューをベストエフォートで生成する（失敗してもセーブ自体は止めない）。"""
+    try:
+        return generate_change_review(project_name, previous_files, current_files)
+    except Exception:
+        return None
+
+
 def serialize_release(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
-    """Firestoreのリリース文書をAPI用に整形する。"""
+    """Firestoreのセーブポイント文書をAPI用に整形する。"""
     data = snapshot.to_dict() or {}
     data["id"] = snapshot.id
     data["created_at"] = _to_iso(data.get("created_at"))

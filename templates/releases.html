@@ -117,6 +117,17 @@
     padding: 32px 20px;
   }
   .summary-box .big-status { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .ai-review {
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.6;
+    background: #f7f8fa;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 10px;
+  }
+  .ai-review-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -254,7 +265,7 @@ async function renderNewReleaseView(root, projectId) {
     <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
     <h1 class="page-title">新規セーブ</h1>
     <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
-    <div class="meta-line" style="margin-bottom:14px;">未セーブの変更をレビュー・承認画面（変更履歴）で全件承認すると、ここからまとめてセーブポイントとして記録できます。GASの保存内容自体は編集した時点で既に反映されているため、これは事前ブロックではなく事後の正式記録です。</div>
+    <div class="meta-line" style="margin-bottom:14px;">未セーブの変更をまとめてセーブポイントとして記録します。GASの保存内容自体は編集した時点で既に反映されているため、これは事前ブロックではなく事後の正式記録です。セーブ時に前回セーブポイントからの変更内容をAIがレビューし、参考情報として記録に添付します。</div>
     <div class="card" id="changesCard"><div class="loading-text">未セーブの変更を確認中...</div></div>
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));
@@ -285,27 +296,26 @@ async function renderNewReleaseView(root, projectId) {
     return;
   }
 
-  const blocked = unreleased.filter((c) => c.approval_status !== 'approved');
   const totalAdded = unreleased.reduce((sum, c) => sum + (c.diff || []).reduce((s, f) => s + (f.added_lines || 0), 0), 0);
   const totalDeleted = unreleased.reduce((sum, c) => sum + (c.diff || []).reduce((s, f) => s + (f.deleted_lines || 0), 0), 0);
 
   changesCard.innerHTML = `
     <div class="meta-line">未セーブの変更：${unreleased.length}件（<span class="added">+${totalAdded}</span> / <span class="deleted">-${totalDeleted}</span>）</div>
-    ${blocked.length ? `<div class="error-message">未承認の変更が${blocked.length}件残っています。<a href="/changes#${projectId}">変更履歴でレビュー・承認</a>してからセーブしてください。</div>` : '<div class="meta-line" style="color: var(--ok);">すべての変更が承認済みです。セーブできます。</div>'}
+    <div class="meta-line">セーブすると、前回のセーブポイントからの変更内容についてAIが影響レビューを自動生成します（参考情報。生成に時間がかかる場合があります）。</div>
     <div style="margin-top:14px;">
       <label class="meta-line" for="releaseComment">セーブコメント（省略可）</label>
       <textarea id="releaseComment" placeholder="このセーブの内容・理由を記入してください"></textarea>
     </div>
     <div class="actions" style="margin-top:10px;">
-      <button type="button" class="primary" id="submitReleaseBtn" ${(canEdit() && !blocked.length) ? '' : 'disabled'}>セーブする</button>
+      <button type="button" class="primary" id="submitReleaseBtn" ${canEdit() ? '' : 'disabled'}>セーブする</button>
     </div>
   `;
 
   const submitBtn = document.getElementById('submitReleaseBtn');
-  if (!canEdit()) submitBtn.title = 'セーブにはMaintainer以上の権限が必要です';
+  if (!canEdit()) submitBtn.title = 'セーブにはDeveloper以上の権限が必要です';
   submitBtn.addEventListener('click', async () => {
     submitBtn.disabled = true;
-    submitBtn.textContent = '作成中...';
+    submitBtn.textContent = 'セーブ中...（AIレビュー生成中）';
     try {
       const res = await apiFetch(`/api/projects/${projectId}/releases`, {
         method: 'POST',
@@ -383,10 +393,11 @@ async function renderDetailView(root, releaseId) {
       <div><span class="status-badge status-approved">セーブポイント v${release.resulting_version_no}</span></div>
       <div class="meta-line">作成者: ${escapeHtml(release.requested_by)} / 作成日時: ${formatDate(release.created_at)} / 変更件数: ${release.change_count}件</div>
       ${release.comment ? `<div class="meta-line">コメント: ${escapeHtml(release.comment)}</div>` : ''}
+      ${release.ai_review ? `<div class="ai-review-label">AIレビュー（参考情報）</div><div class="ai-review">${escapeHtml(release.ai_review)}</div>` : ''}
     </div>
     ${includedChanges.map((c) => `
       <div class="card">
-        <div class="meta-line">検知日時: ${formatDate(c.detected_at)} / 承認者: ${escapeHtml(c.approved_by || '-')}</div>
+        <div class="meta-line">検知日時: ${formatDate(c.detected_at)}</div>
         ${diffTable(c.diff)}
       </div>
     `).join('')}
@@ -407,6 +418,9 @@ async function renderSummaryView(root, releaseId) {
     <div class="card summary-box">
       <div class="big-status"><span class="status-badge status-approved">セーブポイント v${release.resulting_version_no}</span></div>
       <div class="meta-line">セーブポイントとして記録されました（${release.change_count}件の変更をまとめました）。</div>
+      ${release.ai_review
+        ? `<div class="ai-review-label" style="text-align:left;">AIレビュー（参考情報）</div><div class="ai-review" style="text-align:left;">${escapeHtml(release.ai_review)}</div>`
+        : '<div class="meta-line">AIレビューは生成されませんでした（APIキー未設定等の場合があります）。</div>'}
       <div class="actions" style="justify-content:center; margin-top:16px;">
         <button type="button" data-role="go-detail">詳細を見る</button>
         <button type="button" class="primary" data-role="go-list">セーブポイント一覧へ戻る</button>
@@ -418,7 +432,7 @@ async function renderSummaryView(root, releaseId) {
 }
 
 function canEdit() {
-  return currentUserRole === 'maintainer' || currentUserRole === 'owner';
+  return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
 }
 
 async function init() {
