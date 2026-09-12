@@ -223,6 +223,7 @@ function renderMembersCell(project) {
   return `
     <button type="button" data-role="members-toggle">メンバー管理</button>
     <div class="members-panel" data-role="members-panel">
+      <div class="readme-muted" style="margin-bottom:6px;">所有者＝すべて操作可／保守担当＝所有者に近いがメンバー管理は不可／開発者＝編集可／閲覧者＝見るだけ</div>
       <div data-role="members-list" class="readme-muted">読み込み中...</div>
       <div class="add-member">
         <input type="text" data-role="new-member-email" placeholder="メールアドレス">

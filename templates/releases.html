@@ -258,6 +258,7 @@ async function renderNewReleaseView(root, projectId) {
     <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
     <h1 class="page-title">新規リリース作成</h1>
     <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
+    <div class="meta-line" style="margin-bottom:14px;">今のGASの変更内容を他の人に確認してもらい、承認を得てから正式な履歴に記録したいときに使います。すぐ自分だけで保存したい場合はダッシュボードの「セーブポイント」をお使いください。</div>
     <div class="card" id="diffCard"><div class="loading-text">未リリースの変更を確認中...</div></div>
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));

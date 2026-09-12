@@ -148,6 +148,7 @@
     margin-top: 6px;
   }
   .project-card .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .action-hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
   button {
     font-size: 13px;
     padding: 6px 12px;
@@ -158,8 +159,19 @@
   }
   button:hover { background: #f0f2f5; }
   button:disabled { opacity: 0.5; cursor: default; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button.primary:hover { background: var(--accent-dark); }
+  button.primary, a.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    font-size: 13px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--accent);
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+  }
+  button.primary:hover, a.primary:hover { background: var(--accent-dark); }
   button.danger { color: var(--error); border-color: var(--error); }
   .diff-detail {
     margin-top: 10px;
@@ -284,6 +296,7 @@ function renderCard(project) {
       <button type="button" data-role="savepoint" disabled>セーブポイント</button>
       <button type="button" data-role="release-request" disabled>リリース申請</button>
     </div>
+    <div class="action-hint">セーブポイント＝今の状態をすぐ履歴に保存（自分だけで完結）／リリース申請＝他の人の承認を経てから正式な履歴にしたい場合</div>
     <div class="diff-detail" data-role="diff-detail"></div>
   `;
   return card;
@@ -456,75 +469,15 @@ function renderReleaseItem(release) {
     </div>
     ${release.comment ? `<div class="comment">コメント：${escapeHtml(release.comment)}</div>` : ''}
     <div class="actions">
-      <button type="button" class="primary" data-role="approve" ${isAdmin() ? '' : 'disabled title="承認にはOwner権限が必要です"'}>承認</button>
-      <button type="button" class="danger" data-role="reject" ${isAdmin() ? '' : 'disabled title="却下にはOwner権限が必要です"'}>却下</button>
+      <a href="/releases#detail/${release.id}" class="primary">確認して承認・却下する →</a>
     </div>
   `;
   return item;
 }
 
 function wireReleaseItemActions(item, release) {
-  const approveBtn = item.querySelector('[data-role="approve"]');
-  const rejectBtn = item.querySelector('[data-role="reject"]');
-
-  approveBtn.addEventListener('click', async () => {
-    if (!window.confirm('このリリースを承認し、正式なバージョンとして記録します。よろしいですか？')) return;
-    approveBtn.disabled = true;
-    rejectBtn.disabled = true;
-    try {
-      const res = await apiFetch(`/api/releases/${release.id}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown' }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        alert('承認に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
-        approveBtn.disabled = false;
-        rejectBtn.disabled = false;
-        return;
-      }
-    } catch (e) {
-      alert('承認に失敗しました: ' + e.message);
-      approveBtn.disabled = false;
-      rejectBtn.disabled = false;
-      return;
-    }
-    await refreshReleasePanel();
-    const card = listEl.querySelector(`.project-card[data-project-id="${release.project_id}"]`);
-    const project = projectsById[release.project_id];
-    if (card && project) {
-      await refreshProjectState(card, project);
-      updateSummaryFromCards();
-    }
-  });
-
-  rejectBtn.addEventListener('click', async () => {
-    const reason = window.prompt('却下理由を入力してください（省略可）', '');
-    if (reason === null) return;
-    approveBtn.disabled = true;
-    rejectBtn.disabled = true;
-    try {
-      const res = await apiFetch(`/api/releases/${release.id}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown', reason }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        alert('却下に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
-        approveBtn.disabled = false;
-        rejectBtn.disabled = false;
-        return;
-      }
-    } catch (e) {
-      alert('却下に失敗しました: ' + e.message);
-      approveBtn.disabled = false;
-      rejectBtn.disabled = false;
-      return;
-    }
-    await refreshReleasePanel();
-  });
+  // 承認・却下の実操作はリリース管理画面（/releases）に一本化。
+  // ここは「何件承認待ちがあるか」の一覧表示に専念し、操作導線を分散させない。
 }
 
 async function refreshReleasePanel() {
