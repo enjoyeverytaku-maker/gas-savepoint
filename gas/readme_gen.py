@@ -1,19 +1,17 @@
-"""AI README生成ロジック。"""
+"""AI README生成ロジック。
+
+Vertex AI経由でGeminiを呼び出す。このアプリは既にGCP（gas-savepointプロジェクト）
+上で動作しており、Cloud Run/ローカルのApplication Default Credentialsで認証
+できるため、Google AI Studio発行の別建てAPIキーは不要（会長指摘、2026-09-13）。
+"""
 from __future__ import annotations
 
-from google import genai
-
-from auth.secrets import get_secret
-
-
-GEMINI_API_KEY_SECRET_ID = "savepoint-gemini-api-key"
-GEMINI_MODEL = "gemini-2.0-flash"
+from .vertex_client import GEMINI_MODEL, get_genai_client
 
 
 def generate_readme(project_name: str, source_files: list[dict]) -> str:
     """GASソースから日本語READMEを生成する。"""
-    api_key = get_secret(GEMINI_API_KEY_SECRET_ID)
-    client = genai.Client(api_key=api_key)
+    client = get_genai_client()
     prompt = _build_prompt(project_name, source_files)
     response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
     return response.text

@@ -1,22 +1,17 @@
 """セーブ時のAI影響レビュー生成。
 
 人間によるレビュー・承認ゲートを廃止する代わりに、セーブポイント作成時点で
-前回セーブポイントからの累積差分をGemini APIに渡し、影響範囲・リスク・
-確認しておくべき点を日本語でまとめる。あくまで参考情報であり、生成に失敗
-しても（APIキー未設定・API障害等）セーブ自体は止めない（呼び出し側で
-ベストエフォート運用する）。
+前回セーブポイントからの累積差分をGemini API（Vertex AI経由、ADC認証。
+gas/vertex_client.py参照）に渡し、影響範囲・リスク・確認しておくべき点を
+日本語でまとめる。あくまで参考情報であり、生成に失敗しても（API障害等）
+セーブ自体は止めない（呼び出し側でベストエフォート運用する）。
 """
 from __future__ import annotations
 
 import difflib
 from typing import Any
 
-from google import genai
-
-from auth.secrets import get_secret
-
-GEMINI_API_KEY_SECRET_ID = "savepoint-gemini-api-key"
-GEMINI_MODEL = "gemini-2.0-flash"
+from .vertex_client import GEMINI_MODEL, get_genai_client
 
 
 def generate_change_review(
@@ -25,8 +20,7 @@ def generate_change_review(
     current_files: list[dict[str, Any]],
 ) -> str:
     """前回セーブポイントとの差分についてAIレビューコメントを生成する。"""
-    api_key = get_secret(GEMINI_API_KEY_SECRET_ID)
-    client = genai.Client(api_key=api_key)
+    client = get_genai_client()
     prompt = _build_prompt(project_name, previous_files, current_files)
     response = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
     return response.text

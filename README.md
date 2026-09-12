@@ -1,9 +1,9 @@
 # SavePoint
 
 GAS（Google Apps Script）を業務利用する非エンジニア企業向けの変更管理システム。
-変更履歴の確認・過去状態への復元（ロールバック）・変更のレビュー承認・権限管理・監査ログ・台帳管理をブラウザだけで行える。
+変更履歴の確認・過去状態への復元（ロールバック）・セーブ時のAI影響レビュー・権限管理・監査ログ・台帳管理をブラウザだけで行える。
 
-- 技術スタック: FastAPI / Firestore / Secret Manager / Cloud Run / Google OAuth (Internal) / Apps Script API / Gemini API
+- 技術スタック: FastAPI / Firestore / Secret Manager / Cloud Run / Google OAuth (Internal) / Apps Script API / Vertex AI (Gemini)
 - 仕様・タスク管理は非公開の別リポジトリ（社内SSOT）側で行う。このリポジトリはアプリケーション本体のみを保持する
 
 ## セットアップ
@@ -76,22 +76,27 @@ gcloud scheduler jobs create http savepoint-sync-check \
   --headers="X-Scheduler-Token=<savepoint-scheduler-tokenの値>"
 ```
 
-## AI README自動生成（F12、Gemini API）
+## AI機能（F12 README自動生成・セーブ時の影響レビュー、Vertex AI経由のGemini API）
 
-GASプロジェクト登録時・セーブポイント作成時に、Gemini APIでコード内容からREADMEを
-ベストエフォートで自動生成する（失敗してもプロジェクト登録・セーブポイント作成自体は
-必ず成功する）。
+GASプロジェクト登録時・セーブポイント作成時のREADME自動生成、およびセーブ実行時の
+AI影響レビュー生成は、いずれもVertex AI経由でGemini（`gemini-2.5-flash`）を呼び出す
+（`gas/vertex_client.py`）。このアプリは既にGCP（`gas-savepoint`）上で動作しており
+Application Default Credentials（ローカル: `gcloud auth application-default login`、
+Cloud Run: サービスアカウント）で認証できるため、**Google AI Studio発行の別建て
+APIキーは不要**（2026-09-13、会長指摘を受けAPIキー方式から切り替え）。
 
+事前に以下を満たしていること:
 ```bash
-# Google AI StudioなどでGemini APIキーを取得し、Secret Managerへ登録
-echo -n "<Gemini APIキー>" | gcloud secrets create savepoint-gemini-api-key --data-file=- --project=$GCP_PROJECT
+gcloud services enable aiplatform.googleapis.com --project=$GCP_PROJECT
 ```
+Cloud Run本番環境では、サービスアカウントに`roles/aiplatform.user`ロールが必要。
 
-未発行のままでも動作するが（README列は「未生成」のまま）、実際に生成させるにはこのシークレットが必須。
+いずれもベストエフォート運用（失敗してもプロジェクト登録・セーブポイント作成自体は
+必ず成功する）。
 
 ## セキュリティ（spec.md §14）
 
-- 秘密情報（OAuth Client Secret・Refresh Token・Cloud Scheduler用トークン・Gemini APIキー）は
+- 秘密情報（OAuth Client Secret・Refresh Token・Cloud Scheduler用トークン）は
   すべてSecret Manager経由（`auth/secrets.py`）で管理し、コードやFirestoreへ平文保存しない
 - HTTPSはCloud Run標準機能を利用する（アプリ側での追加実装は不要）
 - `SAVEPOINT_DEV_MODE` / `OAUTHLIB_INSECURE_TRANSPORT` はローカル開発専用の抜け穴。
