@@ -4,121 +4,88 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SavePoint 変更履歴</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light;
     --sidebar-bg: #14161b;
     --sidebar-text: #d6d8dc;
-    --sidebar-muted: #8b9099;
-    --sidebar-active-bg: #23262d;
-    --bg: #f7f8fa;
+    --sidebar-muted: #7d838e;
+    --sidebar-muted2: #aab0ba;
+    --sidebar-box-bg: #1b1e25;
+    --sidebar-box-border: #2a2e37;
+    --bg: #f5f6f8;
     --card-bg: #ffffff;
-    --border: #e3e5e9;
+    --border: #e4e7ec;
+    --border-strong: #d5d9e0;
+    --divider: #f0f2f5;
     --text: #16181d;
-    --muted: #767c86;
-    --ok: #1a7f37;
-    --warn: #9a6700;
-    --error: #c0392b;
+    --text-strong: #2a2e37;
+    --text-body: #3a3f47;
+    --muted: #6b7280;
+    --muted2: #8a9099;
     --accent: #23b26d;
+    --accent-dark: #1c8f58;
+    --accent-bg: #eaf7f0;
+    --error: #c0392b;
+    --code-bg: #f4f6f8;
+    --font-sans: 'IBM Plex Sans', 'Noto Sans JP', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; min-height: 100%; }
-  body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-  }
-  .app { display: flex; min-height: 100vh; }
-  .sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    background: var(--sidebar-bg);
-    color: var(--sidebar-text);
-    padding: 24px 16px;
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  body { font-family: var(--font-sans); background: var(--bg); color: var(--text); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  .app { display: flex; min-height: 100vh; align-items: stretch; }
+  .sidebar { width: 248px; flex: 0 0 248px; background: var(--sidebar-bg); color: var(--sidebar-text); padding: 22px 14px 16px; position: sticky; top: 0; align-self: flex-start; height: 100vh; display: flex; flex-direction: column; }
+  .sidebar .brand-row { display: flex; align-items: center; gap: 10px; padding: 0 8px 20px; }
+  .sidebar .brand-icon { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .sidebar .brand-name { color: #fff; font-size: 15.5px; font-weight: 700; letter-spacing: -.005em; }
+  .sidebar .brand-sub { color: var(--sidebar-muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
   .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar nav a {
-    color: var(--sidebar-text);
-    text-decoration: none;
-    font-size: 13px;
-    padding: 9px 10px;
-    border-radius: 6px;
-  }
-  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
-  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
-  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
-  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
-  h1.page-title { font-size: 20px; margin: 0 0 6px; }
-  main { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
-  .page-desc { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
-  select {
-    font-size: 13px;
-    padding: 7px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fff;
-    min-width: 280px;
-  }
-  .filters { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
-  .filter {
-    font-size: 12px;
-    padding: 5px 10px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: #fff;
-    cursor: pointer;
-    color: var(--muted);
-  }
-  .filter.active { background: var(--text); color: #fff; border-color: var(--text); }
-  .timeline { display: flex; flex-direction: column; gap: 14px; }
-  .change-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 16px;
-  }
-  .change-card .change-head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    justify-content: space-between;
-  }
-  .change-card .change-head-left { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  .status-badge {
-    font-size: 11px;
-    font-weight: 600;
-    border-radius: 999px;
-    padding: 2px 9px;
-  }
-  .status-unreleased { background: #eef2f6; color: var(--muted); }
-  .status-released { background: #e8f0fe; color: #1a56db; }
-  .change-card .meta { font-size: 12px; color: var(--muted); }
-  .change-card .comment { font-size: 13px; margin-top: 6px; color: var(--text); }
-  .change-card table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
-  .change-card th, .change-card td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
-  .change-card .added { color: var(--ok); }
-  .change-card .deleted { color: var(--error); }
-  .change-card .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-  button {
-    font-size: 13px;
-    padding: 6px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
-  }
-  button:hover { background: #f0f2f5; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button.danger { color: var(--error); border-color: var(--error); }
+  .sidebar nav a { display: flex; align-items: center; gap: 10px; color: var(--sidebar-muted2); text-decoration: none; font-size: 13.5px; padding: 9px 10px; border-radius: 7px; }
+  .sidebar nav a svg { flex: 0 0 16px; }
+  .sidebar nav a:hover { background: #23262d; }
+  .sidebar nav a.active { background: #23262d; color: #fff; font-weight: 600; }
+  .sidebar nav a[hidden] { display: none; }
+  .sidebar .account-box { margin-top: auto; padding-top: 18px; }
+  .sidebar .account-box .inner { padding: 11px 12px; border-radius: 8px; background: var(--sidebar-box-bg); border: 1px solid var(--sidebar-box-border); }
+  .sidebar .account-box .dot-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .sidebar .account-box .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(35,178,109,.18); }
+  .sidebar .account-box .label { font-size: 10px; letter-spacing: .06em; color: var(--sidebar-muted); text-transform: uppercase; }
+  .sidebar .account-box .email { font-size: 12px; color: #e4e6ea; word-break: break-all; font-family: var(--font-mono); }
+  .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  main { padding: 26px 32px 56px; max-width: 1080px; width: 100%; margin: 0 auto; }
+  .eyebrow { font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted2); font-weight: 600; }
+  h1.page-title { margin: 2px 0 0; font-size: 23px; font-weight: 700; letter-spacing: -.01em; }
+  .page-desc { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 18px 0 16px; }
+  select { padding: 9px 12px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13.5px; background: #fff; color: var(--text); min-width: 230px; }
+  .filters { display: flex; gap: 4px; padding: 3px; background: #eef1f4; border-radius: 9px; }
+  .filter { font-size: 12.5px; font-weight: 600; border: none; border-radius: 7px; padding: 7px 14px; cursor: pointer; background: transparent; color: var(--muted); }
+  .filter.active { background: #fff; color: var(--text-strong); box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+  .count-text { font-size: 12.5px; color: var(--muted); }
+  .timeline-row { display: flex; gap: 16px; }
+  .timeline-dot-col { flex: 0 0 14px; display: flex; flex-direction: column; align-items: center; padding-top: 20px; }
+  .timeline-dot { width: 11px; height: 11px; border-radius: 50%; border: 2.5px solid #fff; box-shadow: 0 0 0 1.5px var(--border-strong); }
+  .timeline-dot.unreleased { background: #dd9b1f; }
+  .timeline-dot.released { background: var(--accent); }
+  .timeline-line { flex: 1; width: 1.5px; background: var(--border); margin-top: 4px; }
+  .change-card { flex: 1; min-width: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; margin-bottom: 12px; }
+  .change-card .change-head { display: flex; align-items: center; gap: 11px; padding: 14px 18px; flex-wrap: wrap; }
+  .change-card .pname { font-size: 14.5px; font-weight: 700; }
+  .status-badge { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .status-badge.unreleased { background: #fdf3e0; color: #8a6620; }
+  .status-badge.released { background: var(--accent-bg); color: var(--accent-dark); }
+  .change-card .detected { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .change-card .counts { margin-left: auto; font-family: var(--font-mono); font-size: 12.5px; }
+  .change-card .file-thead { display: grid; grid-template-columns: 2fr .8fr .6fr .6fr; gap: 12px; padding: 8px 18px; background: #fafbfc; font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; border-top: 1px solid var(--divider); }
+  .change-card .file-row { display: grid; grid-template-columns: 2fr .8fr .6fr .6fr; gap: 12px; padding: 10px 18px; border-top: 1px solid #f6f7f9; align-items: center; font-size: 12.5px; }
+  .change-card .file-row .fname { font-family: var(--font-mono); word-break: break-all; }
+  .change-card .status-tag { padding: 1px 7px; border-radius: 4px; background: #e6eaef; color: #5b6270; font-size: 10.5px; font-weight: 700; }
+  .added { color: var(--accent-dark); font-weight: 600; }
+  .deleted { color: var(--error); font-weight: 600; }
+  .empty-dashed { background: var(--card-bg); border: 1px dashed var(--border-strong); border-radius: 10px; padding: 26px; text-align: center; color: var(--muted); font-size: 13px; }
   .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
   .error-message { color: var(--error); }
 </style>
@@ -126,46 +93,52 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">SavePoint</div>
+    <div class="brand-row">
+      <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
+      <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
+    </div>
     <nav>
-      <a href="/">ダッシュボード</a>
-      <a href="/ledger">台帳</a>
-      <a href="/releases">セーブ管理</a>
-      <a href="/changes" class="active">変更履歴</a>
-      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
-      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
+      <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
+      <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
+      <a href="/releases"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>セーブ管理</a>
+      <a href="/changes" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><circle cx="17.5" cy="9" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 11.5c0 3-3 4-6 4.5"></path></svg>変更履歴</a>
+      <a href="/audit-log" id="auditLogLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z"></path><path d="M9.2 12.2l2 2 3.6-3.8"></path></svg>監査ログ</a>
+      <a href="/users" id="usersLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c1-3.2 3.3-5 5.5-5s4.5 1.8 5.5 5"></path><circle cx="17.5" cy="8.5" r="2.4"></circle><path d="M15.5 14c1.8.3 3.4 1.7 4 4.5"></path></svg>ユーザー管理</a>
     </nav>
-    <div class="account-info" id="accountInfo"></div>
+    <div class="account-box"><div class="inner"><div class="dot-row"><span class="dot"></span><span class="label">接続中のGoogleアカウント</span></div><div class="email" id="accountInfo"></div></div></div>
   </aside>
   <div class="main-content">
   <main>
+    <div class="eyebrow">Change log</div>
     <h1 class="page-title">変更履歴</h1>
-    <p class="page-desc">GASの変更は保存した瞬間に反映されるため、ここは検知した変更の記録（ログ）です。人による承認操作はありません。セーブ管理画面でセーブポイントを作成すると、それまでの変更内容についてAIが影響レビューを自動生成します。</p>
-    <select id="projectSelect"><option value="">すべてのプロジェクト</option></select>
-    <div class="filters" id="filters">
-      <button type="button" class="filter active" data-status="all">すべて (<span data-count="all">0</span>)</button>
-      <button type="button" class="filter" data-status="unreleased">未セーブ (<span data-count="unreleased">0</span>)</button>
-      <button type="button" class="filter" data-status="released">セーブ済み (<span data-count="released">0</span>)</button>
+    <div class="page-desc">自動検知が記録した変更の一覧です。この画面は記録を見るためのもので、操作はありません。</div>
+
+    <div class="toolbar">
+      <select id="projectSelect"><option value="">すべてのプロジェクト</option></select>
+      <div class="filters" id="filters">
+        <button type="button" class="filter active" data-status="all">すべて (<span data-count="all">0</span>)</button>
+        <button type="button" class="filter" data-status="unreleased">未セーブ (<span data-count="unreleased">0</span>)</button>
+        <button type="button" class="filter" data-status="released">セーブ済み (<span data-count="released">0</span>)</button>
+      </div>
+      <span class="count-text" id="countText"></span>
     </div>
+
     <div id="loadingText" class="loading-text">読み込み中...</div>
     <div id="errorText" class="error-message" style="display:none;"></div>
-    <div id="emptyText" class="empty" style="display:none;">該当する変更はありません。</div>
-    <div id="timeline" class="timeline"></div>
+    <div id="emptyText" class="empty-dashed" style="display:none;">条件に合う変更の記録はありません。</div>
+    <div id="timeline"></div>
   </main>
   </div>
 </div>
 
 <script>
-const STATUS_LABELS = {
-  unreleased: '未セーブ',
-  released: 'セーブ済み',
-};
+const STATUS_LABELS = { unreleased: '未セーブ', released: 'セーブ済み' };
 
 let authHeaders = {};
 let allChanges = [];
 let currentFilter = 'all';
 let currentProjectId = '';
-let currentRole = null;
+let projectNameMap = {};
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -185,37 +158,42 @@ async function apiFetch(url, options = {}) {
   return fetch(url, { ...options, headers });
 }
 
-function renderDiffTable(diff) {
-  if (!diff || diff.length === 0) {
-    return '<div class="meta">最初の変更です（比較対象なし）。</div>';
-  }
+function renderFileRows(diff) {
+  if (!diff || diff.length === 0) return '';
+  const thead = `<div class="file-thead"><span>ファイル</span><span>種別</span><span style="text-align:right;">追加</span><span style="text-align:right;">削除</span></div>`;
   const rows = diff.map((f) => `
-    <tr>
-      <td>${escapeHtml(f.name)}</td>
-      <td>${escapeHtml(f.status)}</td>
-      <td class="added">+${f.added_lines}</td>
-      <td class="deleted">-${f.deleted_lines}</td>
-    </tr>
+    <div class="file-row">
+      <span class="fname">${escapeHtml(f.name)}</span>
+      <span><span class="status-tag">${escapeHtml(f.status)}</span></span>
+      <span style="text-align:right;" class="added">+${f.added_lines}</span>
+      <span style="text-align:right;" class="deleted">-${f.deleted_lines}</span>
+    </div>
   `).join('');
-  return `<table><thead><tr><th>ファイル</th><th>状態</th><th>追加</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return thead + rows;
 }
 
-function renderChangeCard(change) {
-  const div = document.createElement('div');
-  div.className = 'change-card';
-  div.dataset.changeId = change.id;
+function renderChangeCard(change, isLast) {
+  const row = document.createElement('div');
+  row.className = 'timeline-row';
   const project = projectNameMap[change.project_id] || change.project_id;
-  div.innerHTML = `
-    <div class="change-head">
-      <div class="change-head-left">
-        <strong>${escapeHtml(project)}</strong>
-        <span class="status-badge status-${change.display_status}">${STATUS_LABELS[change.display_status] || change.display_status}</span>
-        <span class="meta">検知：${formatDate(change.detected_at)}</span>
-      </div>
+  const addedTotal = (change.diff || []).reduce((sum, f) => sum + (f.added_lines || 0), 0);
+  const deletedTotal = (change.diff || []).reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
+  row.innerHTML = `
+    <div class="timeline-dot-col">
+      <span class="timeline-dot ${change.display_status}"></span>
+      ${isLast ? '' : '<span class="timeline-line"></span>'}
     </div>
-    ${renderDiffTable(change.diff)}
+    <div class="change-card">
+      <div class="change-head">
+        <span class="pname">${escapeHtml(project)}</span>
+        <span class="status-badge ${change.display_status}">${STATUS_LABELS[change.display_status] || change.display_status}</span>
+        <span class="detected">検知 ${formatDate(change.detected_at)}</span>
+        <span class="counts"><span class="added">+${addedTotal}</span> <span class="deleted">-${deletedTotal}</span></span>
+      </div>
+      ${renderFileRows(change.diff)}
+    </div>
   `;
-  return div;
+  return row;
 }
 
 function applyFilterAndRender() {
@@ -229,12 +207,13 @@ function applyFilterAndRender() {
   if (currentFilter !== 'all') filtered = filtered.filter((c) => c.display_status === currentFilter);
 
   timelineEl.innerHTML = '';
+  document.getElementById('countText').textContent = `${filtered.length}件`;
   if (!filtered.length) {
     emptyEl.style.display = 'block';
     return;
   }
   emptyEl.style.display = 'none';
-  filtered.forEach((change) => timelineEl.appendChild(renderChangeCard(change)));
+  filtered.forEach((change, i) => timelineEl.appendChild(renderChangeCard(change, i === filtered.length - 1)));
 
   const counts = { all: allChanges.length, unreleased: 0, released: 0 };
   const scoped = currentProjectId ? allChanges.filter((c) => c.project_id === currentProjectId) : allChanges;
@@ -265,8 +244,6 @@ async function loadChanges() {
   applyFilterAndRender();
 }
 
-let projectNameMap = {};
-
 async function init() {
   try {
     const statusRes = await fetch('/api/oauth/status');
@@ -275,7 +252,7 @@ async function init() {
       authHeaders = { 'X-Debug-User-Email': status.email };
     }
     window.__savepointUser = status.email || 'unknown';
-    document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
+    document.getElementById('accountInfo').textContent = status.email || '';
   } catch (e) {
     // dev_mode判定に失敗しても本番(IAP)では影響ないため無視する
   }
@@ -283,13 +260,12 @@ async function init() {
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
-    currentRole = me.role || null;
-    if (currentRole === 'owner') {
+    if (me.role === 'owner') {
       document.getElementById('auditLogLink').hidden = false;
       document.getElementById('usersLink').hidden = false;
     }
   } catch (e) {
-    currentRole = null;
+    // 権限判定に失敗した場合はAPI側の403で最終防御される
   }
 
   const selectEl = document.getElementById('projectSelect');

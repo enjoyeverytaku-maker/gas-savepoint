@@ -4,63 +4,73 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SavePoint 監査ログ</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light;
     --sidebar-bg: #14161b;
     --sidebar-text: #d6d8dc;
-    --sidebar-muted: #8b9099;
-    --sidebar-active-bg: #23262d;
-    --bg: #f7f8fa;
+    --sidebar-muted: #7d838e;
+    --sidebar-muted2: #aab0ba;
+    --sidebar-box-bg: #1b1e25;
+    --sidebar-box-border: #2a2e37;
+    --bg: #f5f6f8;
     --card-bg: #ffffff;
-    --border: #e3e5e9;
+    --border: #e4e7ec;
+    --divider: #f0f2f5;
     --text: #16181d;
-    --muted: #767c86;
-    --error: #c0392b;
+    --text-strong: #2a2e37;
+    --muted: #6b7280;
+    --muted2: #8a9099;
     --accent: #23b26d;
+    --accent-bg: #eaf7f0;
+    --accent-dark: #1c8f58;
+    --error: #c0392b;
+    --error-bg: #fdf2f0;
+    --error-dark: #96342a;
+    --font-sans: 'IBM Plex Sans', 'Noto Sans JP', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; min-height: 100%; }
-  body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-  }
-  .app { display: flex; min-height: 100vh; }
-  .sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    background: var(--sidebar-bg);
-    color: var(--sidebar-text);
-    padding: 24px 16px;
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  body { font-family: var(--font-sans); background: var(--bg); color: var(--text); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  .app { display: flex; min-height: 100vh; align-items: stretch; }
+  .sidebar { width: 248px; flex: 0 0 248px; background: var(--sidebar-bg); color: var(--sidebar-text); padding: 22px 14px 16px; position: sticky; top: 0; align-self: flex-start; height: 100vh; display: flex; flex-direction: column; }
+  .sidebar .brand-row { display: flex; align-items: center; gap: 10px; padding: 0 8px 20px; }
+  .sidebar .brand-icon { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .sidebar .brand-name { color: #fff; font-size: 15.5px; font-weight: 700; letter-spacing: -.005em; }
+  .sidebar .brand-sub { color: var(--sidebar-muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
   .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar nav a {
-    color: var(--sidebar-text);
-    text-decoration: none;
-    font-size: 13px;
-    padding: 9px 10px;
-    border-radius: 6px;
-  }
-  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
-  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
-  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
-  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
-  h1.page-title { font-size: 20px; margin: 0 0 20px; }
-  main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
-  table { width: 100%; border-collapse: collapse; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  th { background: #f0f2f5; font-weight: 600; }
-  tr:last-child td { border-bottom: none; }
-  .result-success { color: #1a7f37; }
-  .result-other { color: var(--error); }
+  .sidebar nav a { display: flex; align-items: center; gap: 10px; color: var(--sidebar-muted2); text-decoration: none; font-size: 13.5px; padding: 9px 10px; border-radius: 7px; }
+  .sidebar nav a svg { flex: 0 0 16px; }
+  .sidebar nav a:hover { background: #23262d; }
+  .sidebar nav a.active { background: #23262d; color: #fff; font-weight: 600; }
+  .sidebar nav a[hidden] { display: none; }
+  .sidebar .account-box { margin-top: auto; padding-top: 18px; }
+  .sidebar .account-box .inner { padding: 11px 12px; border-radius: 8px; background: var(--sidebar-box-bg); border: 1px solid var(--sidebar-box-border); }
+  .sidebar .account-box .dot-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .sidebar .account-box .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(35,178,109,.18); }
+  .sidebar .account-box .label { font-size: 10px; letter-spacing: .06em; color: var(--sidebar-muted); text-transform: uppercase; }
+  .sidebar .account-box .email { font-size: 12px; color: #e4e6ea; word-break: break-all; font-family: var(--font-mono); }
+  .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  main { padding: 26px 32px 56px; max-width: 1180px; width: 100%; margin: 0 auto; }
+  .eyebrow { font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted2); font-weight: 600; }
+  h1.page-title { margin: 2px 0 0; font-size: 23px; font-weight: 700; letter-spacing: -.01em; }
+  .page-desc { font-size: 13px; color: var(--muted); margin: 6px 0 20px; }
+  .table-wrap { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .thead-row { display: grid; grid-template-columns: 1.1fr 1fr 1.2fr 1.5fr .7fr .7fr; gap: 12px; padding: 10px 18px; background: #fafbfc; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; }
+  .log-row { display: grid; grid-template-columns: 1.1fr 1fr 1.2fr 1.5fr .7fr .7fr; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--divider); align-items: center; }
+  .log-row:last-child { border-bottom: none; }
+  .log-row .ts { font-size: 12.5px; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+  .log-row .user { font-size: 12.5px; }
+  .log-row .action-ja { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-strong); }
+  .log-row .action-code { display: block; font-family: var(--font-mono); font-size: 10.5px; color: #9aa0aa; }
+  .log-row .project { font-size: 12.5px; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-row .version { font-family: var(--font-mono); font-size: 12.5px; color: var(--text-strong); }
+  .result-badge { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .result-badge.success { background: var(--accent-bg); color: var(--accent-dark); }
+  .result-badge.other { background: var(--error-bg); color: var(--error-dark); }
   .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
   .error-message { color: var(--error); }
 </style>
@@ -68,41 +78,48 @@
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">SavePoint</div>
+    <div class="brand-row">
+      <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
+      <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
+    </div>
     <nav>
-      <a href="/">ダッシュボード</a>
-      <a href="/ledger">台帳</a>
-      <a href="/releases">セーブ管理</a>
-      <a href="/changes">変更履歴</a>
-      <a href="/audit-log" class="active">監査ログ</a>
-      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
+      <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
+      <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
+      <a href="/releases"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>セーブ管理</a>
+      <a href="/changes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><circle cx="17.5" cy="9" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 11.5c0 3-3 4-6 4.5"></path></svg>変更履歴</a>
+      <a href="/audit-log" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z"></path><path d="M9.2 12.2l2 2 3.6-3.8"></path></svg>監査ログ</a>
+      <a href="/users" id="usersLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c1-3.2 3.3-5 5.5-5s4.5 1.8 5.5 5"></path><circle cx="17.5" cy="8.5" r="2.4"></circle><path d="M15.5 14c1.8.3 3.4 1.7 4 4.5"></path></svg>ユーザー管理</a>
     </nav>
-    <div class="account-info" id="accountInfo"></div>
+    <div class="account-box"><div class="inner"><div class="dot-row"><span class="dot"></span><span class="label">接続中のGoogleアカウント</span></div><div class="email" id="accountInfo"></div></div></div>
   </aside>
   <div class="main-content">
   <main>
-  <h1 class="page-title">監査ログ</h1>
-  <div id="loadingText" class="loading-text">読み込み中...</div>
-  <div id="errorText" class="error-message" style="display:none;"></div>
-  <div id="emptyText" class="empty" style="display:none;">操作履歴がありません。</div>
-  <table id="logTable" style="display:none;">
-    <thead>
-      <tr>
-        <th>日時</th>
-        <th>ユーザー</th>
-        <th>操作</th>
-        <th>プロジェクト</th>
-        <th>対象バージョン</th>
-        <th>結果</th>
-      </tr>
-    </thead>
-    <tbody id="logBody"></tbody>
-  </table>
+    <div class="eyebrow">Audit log</div>
+    <h1 class="page-title">監査ログ</h1>
+    <div class="page-desc">このシステムで行われたすべての操作を、新しい順に記録しています。記録は編集できません。</div>
+    <div id="loadingText" class="loading-text">読み込み中...</div>
+    <div id="errorText" class="error-message" style="display:none;"></div>
+    <div id="emptyText" class="empty" style="display:none;">操作履歴がありません。</div>
+    <div class="table-wrap" id="logTable" style="display:none;">
+      <div class="thead-row"><span>日時</span><span>ユーザー</span><span>操作種別</span><span>対象プロジェクト</span><span>バージョン</span><span style="text-align:right;">結果</span></div>
+      <div id="logBody"></div>
+    </div>
   </main>
   </div>
 </div>
 
 <script>
+const ACTION_LABELS = {
+  LOGIN: 'ログイン',
+  GAS_PROJECT_CREATE: 'プロジェクト登録',
+  GAS_PROJECT_UPDATE: '台帳更新',
+  SOURCE_FETCH: '差分取得',
+  ROLLBACK: 'ロールバック',
+  VERSION_CREATE: 'セーブポイント作成',
+  RELEASE_REQUEST: 'セーブ',
+  CHANGE_DETECT: '変更検知',
+};
+
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -130,7 +147,7 @@ async function loadAuditLog() {
     if (status.dev_mode && status.email) {
       authHeaders = { 'X-Debug-User-Email': status.email };
     }
-    document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
+    document.getElementById('accountInfo').textContent = status.email || '';
   } catch (e) {
     // dev_mode判定に失敗しても本番(IAP)では影響ないため無視する
   }
@@ -150,21 +167,22 @@ async function loadAuditLog() {
   }
 
   const logs = await res.json();
+  document.getElementById('usersLink').hidden = false;
   if (!logs.length) {
     emptyEl.style.display = 'block';
     return;
   }
 
-  tableEl.style.display = 'table';
+  tableEl.style.display = 'block';
   bodyEl.innerHTML = logs.map((log) => `
-    <tr>
-      <td>${formatDate(log.timestamp)}</td>
-      <td>${escapeHtml(log.user)}</td>
-      <td>${escapeHtml(log.action)}</td>
-      <td>${escapeHtml(log.project_id || '-')}</td>
-      <td>${log.target_version ?? '-'}</td>
-      <td class="${log.result === 'success' ? 'result-success' : 'result-other'}">${escapeHtml(log.result)}</td>
-    </tr>
+    <div class="log-row">
+      <span class="ts">${formatDate(log.timestamp)}</span>
+      <span class="user">${escapeHtml(log.user)}</span>
+      <span><span class="action-ja">${escapeHtml(ACTION_LABELS[log.action] || log.action)}</span><span class="action-code">${escapeHtml(log.action)}</span></span>
+      <span class="project">${escapeHtml(log.project_id || '-')}</span>
+      <span class="version">${log.target_version ?? '-'}</span>
+      <span style="text-align:right;"><span class="result-badge ${log.result === 'success' ? 'success' : 'other'}">${escapeHtml(log.result)}</span></span>
+    </div>
   `).join('');
 }
 

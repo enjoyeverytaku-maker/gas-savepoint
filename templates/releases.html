@@ -4,154 +4,259 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SavePoint セーブ管理</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light;
     --sidebar-bg: #14161b;
     --sidebar-text: #d6d8dc;
-    --sidebar-muted: #8b9099;
-    --sidebar-active-bg: #23262d;
-    --bg: #f7f8fa;
+    --sidebar-muted: #7d838e;
+    --sidebar-muted2: #aab0ba;
+    --sidebar-box-bg: #1b1e25;
+    --sidebar-box-border: #2a2e37;
+    --bg: #f5f6f8;
     --card-bg: #ffffff;
-    --border: #e3e5e9;
+    --border: #e4e7ec;
+    --border-strong: #d5d9e0;
+    --divider: #f0f2f5;
     --text: #16181d;
-    --muted: #767c86;
-    --ok: #23b26d;
-    --warn: #b7791f;
-    --error: #c0392b;
+    --text-strong: #2a2e37;
+    --text-mid: #4b5158;
+    --text-body: #3a3f47;
+    --muted: #6b7280;
+    --muted2: #8a9099;
     --accent: #23b26d;
     --accent-dark: #1c8f58;
+    --accent-bg: #eaf7f0;
+    --accent-border: #b7e4cd;
+    --warn: #dd9b1f;
+    --warn-dark: #b7791f;
+    --warn-bg: #fdf3e0;
+    --warn-text: #8a6620;
+    --error: #c0392b;
+    --error-dark: #96342a;
+    --error-bg: #fdf2f0;
+    --error-border2: #e3b6b1;
+    --code-bg: #f4f6f8;
+    --review-bg: #f4f6fa;
+    --review-border: #c8cfdd;
+    --review-header-bg: #eaeef6;
+    --review-text: #39415c;
+    --review-muted: #59637a;
+    --review-muted2: #6f7890;
+    --review-divider: #dbe0ea;
+    --review-bullet: #8d97ae;
+    --font-sans: 'IBM Plex Sans', 'Noto Sans JP', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; min-height: 100%; }
-  body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
-    background: var(--bg);
-    color: var(--text);
-  }
-  .app { display: flex; min-height: 100vh; }
-  .sidebar {
-    width: 220px;
-    flex-shrink: 0;
-    background: var(--sidebar-bg);
-    color: var(--sidebar-text);
-    padding: 24px 16px;
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    display: flex;
-    flex-direction: column;
-  }
-  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  body { font-family: var(--font-sans); background: var(--bg); color: var(--text); font-size: 14px; -webkit-font-smoothing: antialiased; }
+  .app { display: flex; min-height: 100vh; align-items: stretch; }
+  .sidebar { width: 248px; flex: 0 0 248px; background: var(--sidebar-bg); color: var(--sidebar-text); padding: 22px 14px 16px; position: sticky; top: 0; align-self: flex-start; height: 100vh; display: flex; flex-direction: column; }
+  .sidebar .brand-row { display: flex; align-items: center; gap: 10px; padding: 0 8px 20px; }
+  .sidebar .brand-icon { width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px; background: var(--accent); display: flex; align-items: center; justify-content: center; }
+  .sidebar .brand-name { color: #fff; font-size: 15.5px; font-weight: 700; letter-spacing: -.005em; }
+  .sidebar .brand-sub { color: var(--sidebar-muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
   .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
-  .sidebar nav a {
-    color: var(--sidebar-text);
-    text-decoration: none;
-    font-size: 13px;
-    padding: 9px 10px;
-    border-radius: 6px;
-  }
-  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
-  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
-  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
-  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
-  main { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
-  h1.page-title { font-size: 20px; margin: 0 0 6px; }
-  .breadcrumb { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
-  .breadcrumb a { color: var(--accent); text-decoration: none; cursor: pointer; }
-  .card {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 18px 20px;
-    margin-bottom: 16px;
-  }
-  .project-pick-row, .release-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  .project-pick-row .name { font-weight: 600; font-size: 14px; }
-  .project-pick-row .script-id { font-size: 12px; color: var(--muted); }
-  .actions { display: flex; gap: 8px; }
-  button {
-    font-size: 13px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: #fff;
-    cursor: pointer;
-  }
-  button:hover { background: #f0f2f5; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .sidebar nav a { display: flex; align-items: center; gap: 10px; color: var(--sidebar-muted2); text-decoration: none; font-size: 13.5px; padding: 9px 10px; border-radius: 7px; }
+  .sidebar nav a svg { flex: 0 0 16px; }
+  .sidebar nav a:hover { background: #23262d; }
+  .sidebar nav a.active { background: #23262d; color: #fff; font-weight: 600; }
+  .sidebar nav a[hidden] { display: none; }
+  .sidebar .account-box { margin-top: auto; padding-top: 18px; }
+  .sidebar .account-box .inner { padding: 11px 12px; border-radius: 8px; background: var(--sidebar-box-bg); border: 1px solid var(--sidebar-box-border); }
+  .sidebar .account-box .dot-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .sidebar .account-box .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(35,178,109,.18); }
+  .sidebar .account-box .label { font-size: 10px; letter-spacing: .06em; color: var(--sidebar-muted); text-transform: uppercase; }
+  .sidebar .account-box .email { font-size: 12px; color: #e4e6ea; word-break: break-all; font-family: var(--font-mono); }
+  .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  main { padding: 26px 32px 56px; max-width: 1080px; width: 100%; margin: 0 auto; }
+  .eyebrow { font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted2); font-weight: 600; }
+  h1.page-title { margin: 2px 0 0; font-size: 23px; font-weight: 700; letter-spacing: -.01em; }
+  .breadcrumb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .breadcrumb-row .pname { font-size: 15px; font-weight: 700; }
+  .breadcrumb-row .pversion { font-size: 12px; color: var(--muted2); font-family: var(--font-mono); }
+  .tabbar { display: flex; gap: 4px; padding: 3px; background: #eef1f4; border-radius: 9px; }
+  .tabbar button { font-size: 12.5px; font-weight: 600; border: none; border-radius: 7px; padding: 7px 13px; cursor: pointer; background: transparent; color: var(--muted); }
+  .tabbar button.active { background: #fff; color: var(--text-strong); box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); padding: 20px 22px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 3px; font-size: 15.5px; font-weight: 700; }
+  .select-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .select-card { text-align: left; display: block; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); width: 100%; }
+  .select-card .head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .select-card .pname { font-size: 14.5px; font-weight: 700; }
+  .select-card .script-id { font-size: 11.5px; color: var(--muted2); margin-top: 4px; font-family: var(--font-mono); word-break: break-all; }
+  .select-card .meta { font-size: 12.5px; color: var(--muted); margin-top: 9px; }
+  .badge-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .badge-pill.ok { background: var(--accent-bg); color: var(--accent-dark); }
+  .badge-pill.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; margin-top: 16px; }
+  .stat-grid .stat { background: #fbfcfd; padding: 13px 15px; }
+  .stat-grid .stat .label { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .stat-grid .stat .value-row { display: flex; align-items: baseline; gap: 5px; margin-top: 4px; }
+  .stat-grid .stat .value { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat-grid .stat .unit { font-size: 11.5px; color: var(--muted2); }
+  label.field-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-mid); margin-bottom: 6px; }
+  label.field-label .hint { color: var(--muted2); font-weight: 400; }
+  textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13.5px; line-height: 1.7; resize: vertical; font-family: inherit; background: #fff; color: var(--text); }
+  .ai-note { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; padding: 13px 15px; background: #f4f6fa; border: 1px dashed #c8cfdd; border-radius: 9px; font-size: 12.5px; color: #4a5468; line-height: 1.7; }
+  button { font-family: inherit; font-size: 13px; font-weight: 600; color: var(--text-strong); padding: 8px 13px; border-radius: 8px; border: 1px solid var(--border-strong); background: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  button:hover { background: #f7f8fa; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; padding: 11px 22px; font-size: 14px; }
   button.primary:hover { background: var(--accent-dark); }
-  button.danger { color: var(--error); border-color: var(--error); }
-  textarea {
-    width: 100%;
-    min-height: 70px;
-    padding: 8px 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    font-size: 13px;
-    font-family: inherit;
-    resize: vertical;
-  }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  th { background: #f0f2f5; font-weight: 600; }
-  .status-badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; display: inline-block; }
-  .status-pending { background: #fff7e6; color: var(--warn); }
-  .status-approved { background: #eafaf1; color: var(--ok); }
-  .status-rejected { background: #fdecea; color: var(--error); }
-  .meta-line { font-size: 12px; color: var(--muted); margin: 4px 0; }
-  .added { color: var(--ok); }
-  .deleted { color: var(--error); }
+  button.danger { color: var(--error); border-color: var(--error-border2); }
+  @keyframes spSpin { to { transform: rotate(360deg); } }
+  .spin { animation: spSpin .8s linear infinite; }
+  .actions-row { display: flex; align-items: center; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+  .actions-row .note { font-size: 12.5px; color: var(--muted); }
+  .file-card { border: 1px solid var(--border); border-radius: 8px; background: #fff; margin-bottom: 10px; overflow: hidden; }
+  .file-card .file-head { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: var(--code-bg); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .file-card .fname { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; }
+  .file-card .status-tag { padding: 1px 6px; border-radius: 4px; background: #e6eaef; color: #5b6270; font-size: 10.5px; font-weight: 700; }
+  .file-card .counts { margin-left: auto; font-family: var(--font-mono); font-size: 12px; }
+  .file-card .toggle-btn { font-size: 12px; padding: 5px 10px; border-radius: 7px; }
+  .diff-lines { font-family: var(--font-mono); font-size: 12px; line-height: 1.75; overflow-x: auto; background: #fbfcfd; }
+  .diff-lines .ln { display: flex; }
+  .diff-lines .ln .a, .diff-lines .ln .b { flex: 0 0 44px; text-align: right; padding-right: 8px; color: #b3b9c2; user-select: none; }
+  .diff-lines .ln .sign { flex: 0 0 16px; color: var(--muted2); }
+  .diff-lines .ln .text { white-space: pre-wrap; word-break: break-word; padding-right: 12px; }
+  .diff-lines .ln.insert { background: var(--accent-bg); }
+  .diff-lines .ln.delete { background: var(--error-bg); }
+  .diff-lines .ln.header { background: var(--code-bg); color: var(--muted); }
+  .added { color: var(--accent-dark); font-weight: 600; }
+  .deleted { color: var(--error); font-weight: 600; }
+  .table-wrap { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .sp-thead { display: grid; grid-template-columns: .7fr 1fr 1.1fr .8fr 2fr .8fr; gap: 12px; padding: 10px 18px; background: #fafbfc; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; }
+  .sp-row { display: grid; grid-template-columns: .7fr 1fr 1.1fr .8fr 2fr .8fr; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--divider); align-items: center; }
+  .sp-row:last-child { border-bottom: none; }
+  .sp-row .version { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; color: var(--accent-dark); }
+  .sp-row .author { font-size: 13px; }
+  .sp-row .created { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sp-row .changes { font-size: 12.5px; color: var(--muted); }
+  .sp-row .comment { font-size: 12.5px; color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .review-box { background: var(--review-bg); border: 1px solid var(--review-border); border-radius: 10px; overflow: hidden; margin-bottom: 14px; }
+  .review-box .review-head { display: flex; align-items: center; gap: 10px; padding: 12px 18px; background: var(--review-header-bg); border-bottom: 1px dashed var(--review-border); flex-wrap: wrap; }
+  .review-box .review-head .title { font-size: 13.5px; font-weight: 700; color: var(--review-text); }
+  .review-box .review-head .tag { padding: 2px 9px; border-radius: 20px; background: #fff; border: 1px solid var(--review-border); font-size: 11px; font-weight: 700; color: var(--review-muted); }
+  .review-box .review-head .gen-at { margin-left: auto; font-size: 11.5px; color: var(--review-muted2); }
+  .review-box .review-body { padding: 18px 20px; }
+  .risk-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .risk-row .label { font-size: 12px; color: var(--review-muted); font-weight: 600; }
+  .risk-badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 11px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+  .risk-badge.low { background: var(--accent-bg); color: var(--accent-dark); }
+  .risk-badge.medium { background: var(--warn-bg); color: var(--warn-text); }
+  .risk-badge.high { background: var(--error-bg); color: var(--error-dark); }
+  .risk-row .summary { font-size: 12px; color: var(--review-muted2); }
+  .review-section { margin-bottom: 14px; }
+  .review-section .sec-title { font-size: 13px; font-weight: 700; color: var(--review-text); padding-bottom: 6px; border-bottom: 1px solid var(--review-divider); margin-bottom: 8px; }
+  .review-section .sec-item { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 6px; }
+  .review-section .sec-item .bullet { flex: 0 0 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--review-bullet); margin-top: 8px; }
+  .review-section .sec-item .text { font-size: 13px; color: var(--text-body); line-height: 1.75; }
+  .review-footnote { font-size: 11.5px; color: var(--review-muted2); border-top: 1px solid var(--review-divider); padding-top: 10px; }
+  .review-failed-box { background: var(--warn-bg); border: 1px solid #f0c36d; border-radius: 10px; padding: 16px 18px; display: flex; gap: 13px; align-items: flex-start; }
+  .review-failed-box .title { font-size: 13.5px; font-weight: 700; color: #7a5410; }
+  .review-failed-box .body { font-size: 12.5px; color: var(--warn-text); margin-top: 4px; line-height: 1.7; }
+  .summary-box { text-align: center; padding: 22px 24px; }
+  .summary-box .head-row { display: flex; gap: 14px; align-items: flex-start; text-align: left; }
+  .summary-box .icon-ok { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; background: var(--accent-bg); display: flex; align-items: center; justify-content: center; }
+  .summary-box h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .summary-box .sub { font-size: 13px; color: var(--muted); margin-top: 5px; }
   .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 16px 0; }
   .error-message { color: var(--error); }
-  .summary-box {
-    text-align: center;
-    padding: 32px 20px;
-  }
-  .summary-box .big-status { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
-  .ai-review {
-    white-space: pre-wrap;
-    font-size: 13px;
-    line-height: 1.6;
-    background: #f7f8fa;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 12px 14px;
-    margin-top: 10px;
-  }
-  .ai-review-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 14px; }
+  @keyframes spFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  @keyframes spPop { from { opacity: 0; transform: scale(.975); } to { opacity: 1; transform: none; } }
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); z-index: 70; display: flex; align-items: center; gap: 11px; background: var(--sidebar-bg); color: #fff; border-radius: 10px; padding: 13px 18px; box-shadow: 0 14px 40px rgba(10,14,20,.34); max-width: 520px; font-size: 13.5px; line-height: 1.5; animation: spFade .2s ease-out; }
+  .toast.error { background: var(--error-dark); }
+  .toast .icon { width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--accent); }
+  .toast.error .icon { background: #fff; }
+  .dialog-overlay { position: fixed; inset: 0; background: rgba(16,20,26,.48); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 60; }
+  .dialog-box { width: 100%; max-width: 520px; background: #fff; border-radius: 12px; box-shadow: 0 24px 60px rgba(10,14,20,.3); animation: spPop .16s ease-out; overflow: hidden; }
+  .dialog-box .dialog-body { padding: 22px 24px 18px; }
+  .dialog-box .dialog-body .row { display: flex; gap: 13px; align-items: flex-start; }
+  .dialog-box .icon-danger { width: 36px; height: 36px; flex: 0 0 36px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: var(--error-bg); }
+  .dialog-box h3 { margin: 0; font-size: 16.5px; font-weight: 700; }
+  .dialog-box .dialog-desc { font-size: 13.5px; color: var(--muted); margin-top: 7px; line-height: 1.7; }
+  .dialog-box .facts { margin-top: 16px; display: flex; flex-direction: column; gap: 1px; background: var(--divider); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+  .dialog-box .fact-row { display: flex; justify-content: space-between; gap: 14px; padding: 10px 14px; background: #fbfcfd; font-size: 12.5px; }
+  .dialog-box .fact-row .k { color: var(--muted); }
+  .dialog-box .fact-row .v { font-weight: 600; color: var(--text-body); text-align: right; }
+  .dialog-footer { display: flex; justify-content: flex-end; gap: 9px; padding: 14px 24px; background: #f7f8fa; border-top: 1px solid var(--divider); }
 </style>
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">SavePoint</div>
+    <div class="brand-row">
+      <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
+      <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
+    </div>
     <nav>
-      <a href="/">ダッシュボード</a>
-      <a href="/ledger">台帳</a>
-      <a href="/releases" class="active">セーブ管理</a>
-      <a href="/changes">変更履歴</a>
-      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
-      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
+      <a href="/"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
+      <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
+      <a href="/releases" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>セーブ管理</a>
+      <a href="/changes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><circle cx="17.5" cy="9" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 11.5c0 3-3 4-6 4.5"></path></svg>変更履歴</a>
+      <a href="/audit-log" id="auditLogLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z"></path><path d="M9.2 12.2l2 2 3.6-3.8"></path></svg>監査ログ</a>
+      <a href="/users" id="usersLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c1-3.2 3.3-5 5.5-5s4.5 1.8 5.5 5"></path><circle cx="17.5" cy="8.5" r="2.4"></circle><path d="M15.5 14c1.8.3 3.4 1.7 4 4.5"></path></svg>ユーザー管理</a>
     </nav>
-    <div class="account-info" id="accountInfo"></div>
+    <div class="account-box"><div class="inner"><div class="dot-row"><span class="dot"></span><span class="label">接続中のGoogleアカウント</span></div><div class="email" id="accountInfo"></div></div></div>
   </aside>
   <div class="main-content">
     <main id="viewRoot">
+      <div class="eyebrow">Savepoints</div>
+      <h1 class="page-title">セーブ管理</h1>
       <div class="loading-text">読み込み中...</div>
     </main>
   </div>
 </div>
+<div id="toastContainer"></div>
+<div id="dialogContainer"></div>
 
 <script>
+function showToast(message, isError) {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' error' : '');
+  el.innerHTML = `
+    <span class="icon"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isError ? '#c0392b' : '#0c1a13'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${isError ? '<path d="M12 4.5l8.5 15H3.5zM12 10v4"></path>' : '<path d="M5 12.5l4.5 4.5L19 7.5"></path>'}</svg></span>
+    <span>${escapeHtml(message)}</span>
+  `;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+function showConfirmDialog({ title, body, facts, confirmLabel, onConfirm }) {
+  const container = document.getElementById('dialogContainer');
+  container.innerHTML = `
+    <div class="dialog-overlay">
+      <div class="dialog-box">
+        <div class="dialog-body">
+          <div class="row">
+            <div class="icon-danger"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#c0392b" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5l8.5 15H3.5zM12 10v4M12 17h.01"></path></svg></div>
+            <div style="min-width:0;flex:1;">
+              <h3>${escapeHtml(title)}</h3>
+              <div class="dialog-desc">${escapeHtml(body)}</div>
+            </div>
+          </div>
+          ${facts && facts.length ? `<div class="facts">${facts.map((f) => `<div class="fact-row"><span class="k">${escapeHtml(f.k)}</span><span class="v">${escapeHtml(f.v)}</span></div>`).join('')}</div>` : ''}
+        </div>
+        <div class="dialog-footer">
+          <button type="button" id="dialogCancel">やめる</button>
+          <button type="button" id="dialogConfirm" style="background:#c0392b;color:#fff;border-color:#c0392b;">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => { container.innerHTML = ''; };
+  document.getElementById('dialogCancel').addEventListener('click', close);
+  document.getElementById('dialogConfirm').addEventListener('click', async () => {
+    close();
+    await onConfirm();
+  });
+}
+
 let authHeaders = {};
 let currentUserRole = null;
 let projectsCache = [];
@@ -180,17 +285,105 @@ function diffSummary(diff) {
   return `<span class="added">+${added}</span> / <span class="deleted">-${deleted}</span>`;
 }
 
-function diffTable(diff) {
-  if (!diff || !diff.length) return '<div class="meta-line">変更はありません。</div>';
-  const rows = diff.map((f) => `
-    <tr>
-      <td>${escapeHtml(f.name)}</td>
-      <td>${escapeHtml(f.status)}</td>
-      <td class="added">+${f.added_lines}</td>
-      <td class="deleted">-${f.deleted_lines}</td>
-    </tr>
+function renderDiffLine(ln) {
+  const cls = ln.type === 'insert' ? 'insert' : ln.type === 'delete' ? 'delete' : ln.type === 'header' ? 'header' : '';
+  const sign = ln.type === 'insert' ? '+' : ln.type === 'delete' ? '-' : '';
+  return `<div class="ln ${cls}"><span class="a">${ln.a ?? ''}</span><span class="b">${ln.b ?? ''}</span><span class="sign">${sign}</span><span class="text">${escapeHtml(ln.text)}</span></div>`;
+}
+
+function renderFileCards(diff, expandable) {
+  if (!diff || !diff.length) return '<div class="meta-line" style="color:var(--muted);font-size:13px;">変更はありません。</div>';
+  return diff.map((f, i) => `
+    <div class="file-card">
+      <div class="file-head">
+        <span class="fname">${escapeHtml(f.name)}</span>
+        <span class="status-tag">${escapeHtml(f.status)}</span>
+        <span class="counts"><span class="added">+${f.added_lines}</span> <span class="deleted">-${f.deleted_lines}</span></span>
+        ${expandable ? `<button type="button" class="toggle-btn" data-role="toggle-diff" data-index="${i}">差分を見る</button>` : ''}
+      </div>
+      <div class="diff-lines" data-role="diff-lines-${i}" style="${expandable ? 'display:none;' : ''}">${(f.lines || []).map(renderDiffLine).join('')}</div>
+    </div>
   `).join('');
-  return `<table><thead><tr><th>ファイル</th><th>状態</th><th>追加</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function wireFileToggles(root) {
+  root.querySelectorAll('[data-role="toggle-diff"]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const idx = btn.dataset.index;
+      const linesEl = root.querySelector(`[data-role="diff-lines-${idx}"]`);
+      const open = linesEl.style.display !== 'none';
+      linesEl.style.display = open ? 'none' : 'block';
+      btn.textContent = open ? '差分を見る' : '差分を閉じる';
+    });
+  });
+}
+
+const RISK_LABELS = { low: '小', medium: '中', high: '大' };
+
+function renderReviewBox(review, generatedAtOverride) {
+  if (!review) return '';
+  const generatedAt = formatDate(generatedAtOverride || review.generated_at);
+  return `
+    <div class="review-box">
+      <div class="review-head">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#59637a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l1.8 4.2L18 10l-4.2 1.8L12 16l-1.8-4.2L6 10l4.2-1.8z"></path><path d="M18 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"></path></svg>
+        <span class="title">AI影響レビュー</span>
+        <span class="tag">参考情報 / 承認ではありません</span>
+        <span class="gen-at">${generatedAt} 自動生成</span>
+      </div>
+      <div class="review-body">
+        <div class="risk-row">
+          <span class="label">想定される影響の大きさ</span>
+          <span class="risk-badge ${review.risk_level}">${RISK_LABELS[review.risk_level] || review.risk_level}</span>
+          <span class="summary">${escapeHtml(review.summary || '')}</span>
+        </div>
+        ${(review.sections || []).map((sec) => `
+          <div class="review-section">
+            <div class="sec-title">${escapeHtml(sec.title)}</div>
+            ${(sec.items || []).map((it) => `<div class="sec-item"><span class="bullet"></span><span class="text">${escapeHtml(it)}</span></div>`).join('')}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderReviewFailedBox(versionNo, releaseId) {
+  return `
+    <div class="review-failed-box">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b7791f" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 18px;margin-top:2px;"><path d="M12 4.5l8.5 15H3.5z"></path><path d="M12 10v4"></path><path d="M12 17h.01"></path></svg>
+      <div style="min-width:0;flex:1;">
+        <div class="title">AI影響レビューは生成できませんでした</div>
+        <div class="body">セーブポイント v${versionNo} は正しく記録されています。レビューの生成のみ失敗しました。必要であれば後から再生成できます。</div>
+        <button type="button" style="margin-top:10px;font-size:12.5px;" data-role="retry-review" data-release-id="${releaseId}">レビューを再生成する</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireRetryReview(root, onDone) {
+  const btn = root.querySelector('[data-role="retry-review"]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = '再生成中...';
+    try {
+      const res = await apiFetch(`/api/releases/${btn.dataset.releaseId}/regenerate-review`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast('再生成に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+        btn.disabled = false;
+        btn.textContent = 'レビューを再生成する';
+        return;
+      }
+      showToast('AIレビューを再生成しました。');
+      onDone(data.release);
+    } catch (e) {
+      showToast('再生成に失敗しました: ' + e.message, true);
+      btn.disabled = false;
+      btn.textContent = 'レビューを再生成する';
+    }
+  });
 }
 
 // ------------------------------------------------------------
@@ -228,47 +421,63 @@ async function renderSelectView(root) {
   const projects = await res.json();
   projectsCache = projects;
 
-  if (!projects.length) {
-    root.innerHTML = '<h1 class="page-title">セーブ管理</h1><div class="empty">登録済みのGASプロジェクトがありません。まず台帳から登録してください。</div>';
-    return;
-  }
-
   root.innerHTML = `
+    <div class="eyebrow">Savepoints</div>
     <h1 class="page-title">セーブ管理</h1>
-    <div class="meta-line">対象のGASプロジェクトを選択してください。</div>
-    ${projects.map((p) => `
-      <div class="card project-pick-row" data-project-id="${p.id}">
-        <div>
-          <div class="name">${escapeHtml(p.project_name)}</div>
-          <div class="script-id">${escapeHtml(p.script_id)}</div>
-        </div>
-        <div class="actions">
-          <button type="button" class="primary" data-role="go-new">新規セーブ</button>
-          <button type="button" data-role="go-list">セーブポイント一覧</button>
-        </div>
+    <div style="height:16px;"></div>
+    ${!projects.length ? '<div class="empty">登録済みのGASプロジェクトがありません。まず台帳から登録してください。</div>' : `
+      <div class="empty" style="text-align:left;padding-bottom:14px;">セーブする対象のGASプロジェクトを選んでください。</div>
+      <div class="select-grid">
+        ${projects.map((p) => `
+          <button type="button" class="select-card" data-project-id="${p.id}" data-role="go-new">
+            <div class="head-row"><span class="pname">${escapeHtml(p.project_name)}</span></div>
+            <div class="script-id">${escapeHtml(p.script_id)}</div>
+            <div class="meta">${escapeHtml(p.department || '')}</div>
+          </button>
+        `).join('')}
       </div>
-    `).join('')}
+    `}
   `;
 
-  root.querySelectorAll('[data-project-id]').forEach((row) => {
-    const id = row.dataset.projectId;
-    row.querySelector('[data-role="go-new"]').addEventListener('click', () => navigate(`new/${id}`));
-    row.querySelector('[data-role="go-list"]').addEventListener('click', () => navigate(`list/${id}`));
+  root.querySelectorAll('[data-project-id]').forEach((card) => {
+    card.addEventListener('click', () => navigate(`new/${card.dataset.projectId}`));
   });
 }
 
-// 2. 新規セーブ画面（未セーブのchangesが全件承認済みであることを確認してから作成）
+function renderTabbar(projectId, activeTab) {
+  return `
+    <div class="tabbar">
+      <button type="button" data-role="tab-new" class="${activeTab === 'new' ? 'active' : ''}">新規セーブ</button>
+      <button type="button" data-role="tab-list" class="${activeTab === 'list' ? 'active' : ''}">セーブポイント一覧</button>
+    </div>
+  `;
+}
+
+function wireTabbar(root, projectId) {
+  root.querySelector('[data-role="tab-new"]')?.addEventListener('click', () => navigate(`new/${projectId}`));
+  root.querySelector('[data-role="tab-list"]')?.addEventListener('click', () => navigate(`list/${projectId}`));
+}
+
+// 2. 新規セーブ画面
 async function renderNewReleaseView(root, projectId) {
   const project = projectsCache.find((p) => p.id === projectId) || (await (await apiFetch(`/api/projects/${projectId}`)).json());
+  const savepoints = await (await apiFetch(`/api/projects/${projectId}/savepoints`)).json();
+  const latestVersion = savepoints[0] ? savepoints[0].version_no : 0;
 
   root.innerHTML = `
-    <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
-    <h1 class="page-title">新規セーブ</h1>
-    <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
-    <div class="meta-line" style="margin-bottom:14px;">未セーブの変更をまとめてセーブポイントとして記録します。GASの保存内容自体は編集した時点で既に反映されているため、これは事前ブロックではなく事後の正式記録です。セーブ時に前回セーブポイントからの変更内容をAIがレビューし、参考情報として記録に添付します。</div>
+    <div class="eyebrow">Savepoints</div>
+    <h1 class="page-title">セーブ管理</h1>
+    <div class="breadcrumb-row" style="margin-top:16px;">
+      <button type="button" data-role="back">← プロジェクト選択へ</button>
+      <span class="pname">${escapeHtml(project.project_name)}</span>
+      <span class="pversion">最終セーブ v${latestVersion}</span>
+      <div style="flex:1;"></div>
+      ${renderTabbar(projectId, 'new')}
+    </div>
     <div class="card" id="changesCard"><div class="loading-text">未セーブの変更を確認中...</div></div>
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));
+  wireTabbar(root, projectId);
 
   const changesCard = document.getElementById('changesCard');
   const res = await apiFetch(`/api/projects/${projectId}/changes`);
@@ -278,18 +487,19 @@ async function renderNewReleaseView(root, projectId) {
   if (!unreleased.length) {
     changesCard.innerHTML = `
       <div class="empty">未セーブの変更はありません。</div>
-      <div class="actions" style="margin-top:10px;">
-        <button type="button" id="detectBtn">今すぐ変更を検知する</button>
-      </div>
+      <button type="button" id="detectBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" id="detectIcon"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4.5V11h-6"></path></svg>
+        今すぐ変更を検知する
+      </button>
     `;
     document.getElementById('detectBtn').addEventListener('click', async () => {
       const btn = document.getElementById('detectBtn');
       btn.disabled = true;
-      btn.textContent = '検知中...';
+      document.getElementById('detectIcon').classList.add('spin');
       const detectRes = await apiFetch(`/api/projects/${projectId}/sync-check`, { method: 'POST' });
       const detectData = await detectRes.json();
       if (!detectData.ok) {
-        alert('検知に失敗しました: ' + (detectData.error ? detectData.error.message : '不明なエラー'));
+        showToast('検知に失敗しました: ' + (detectData.error ? detectData.error.message : '不明なエラー'), true);
       }
       await renderNewReleaseView(root, projectId);
     });
@@ -298,24 +508,38 @@ async function renderNewReleaseView(root, projectId) {
 
   const totalAdded = unreleased.reduce((sum, c) => sum + (c.diff || []).reduce((s, f) => s + (f.added_lines || 0), 0), 0);
   const totalDeleted = unreleased.reduce((sum, c) => sum + (c.diff || []).reduce((s, f) => s + (f.deleted_lines || 0), 0), 0);
+  const allFiles = unreleased.flatMap((c) => c.diff || []);
 
   changesCard.innerHTML = `
-    <div class="meta-line">未セーブの変更：${unreleased.length}件（<span class="added">+${totalAdded}</span> / <span class="deleted">-${totalDeleted}</span>）</div>
-    <div class="meta-line">セーブすると、前回のセーブポイントからの変更内容についてAIが影響レビューを自動生成します（参考情報。生成に時間がかかる場合があります）。</div>
-    <div style="margin-top:14px;">
-      <label class="meta-line" for="releaseComment">セーブコメント（省略可）</label>
-      <textarea id="releaseComment" placeholder="このセーブの内容・理由を記入してください"></textarea>
+    <h2>今の状態をセーブする</h2>
+    <div class="meta-line" style="font-size:12.5px;color:var(--muted);">検知された未セーブの変更を、新しいセーブポイントとして記録します。GAS側のコードは書き換わりません。</div>
+    <div class="stat-grid">
+      <div class="stat"><div class="label">未セーブの変更</div><div class="value-row"><span class="value">${unreleased.length}</span><span class="unit">件</span></div></div>
+      <div class="stat"><div class="label">追加行数</div><div class="value-row"><span class="value added">+${totalAdded}</span></div></div>
+      <div class="stat"><div class="label">削除行数</div><div class="value-row"><span class="value deleted">-${totalDeleted}</span></div></div>
+      <div class="stat"><div class="label">対象ファイル</div><div class="value-row"><span class="value">${new Set(allFiles.map((f) => f.name)).size}</span><span class="unit">件</span></div></div>
     </div>
-    <div class="actions" style="margin-top:10px;">
-      <button type="button" class="primary" id="submitReleaseBtn" ${canEdit() ? '' : 'disabled'}>セーブする</button>
+    <div style="margin-top:18px;">
+      <label class="field-label" for="releaseComment">セーブコメント<span class="hint">（何のための変更かを短く書いておくと、後から探しやすくなります）</span></label>
+      <textarea id="releaseComment" rows="3" placeholder="例：打刻漏れ通知の判定条件を修正しました"></textarea>
+    </div>
+    <div class="ai-note">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#59637a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 17px;margin-top:2px;"><path d="M12 4l1.8 4.2L18 10l-4.2 1.8L12 16l-1.8-4.2L6 10l4.2-1.8z"></path><path d="M18 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"></path></svg>
+      <div>セーブすると、前回のセーブポイントからの変更内容についてAIが影響レビューを自動生成します。レビューは<strong>参考情報</strong>で、セーブを止めたり承認したりするものではありません。</div>
+    </div>
+    <div class="actions-row">
+      <button type="button" class="primary" id="submitReleaseBtn" ${canEdit() ? '' : 'disabled'}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>
+        セーブする
+      </button>
+      <span class="note" id="submitNote">${canEdit() ? '' : 'セーブにはDeveloper以上の権限が必要です'}</span>
     </div>
   `;
 
   const submitBtn = document.getElementById('submitReleaseBtn');
-  if (!canEdit()) submitBtn.title = 'セーブにはDeveloper以上の権限が必要です';
   submitBtn.addEventListener('click', async () => {
     submitBtn.disabled = true;
-    submitBtn.textContent = 'セーブ中...（AIレビュー生成中）';
+    document.getElementById('submitNote').textContent = 'AIレビューを生成しています…（数秒かかる場合があります）';
     try {
       const res = await apiFetch(`/api/projects/${projectId}/releases`, {
         method: 'POST',
@@ -324,16 +548,16 @@ async function renderNewReleaseView(root, projectId) {
       });
       const data = await res.json();
       if (!data.ok) {
-        alert('セーブに失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        showToast('セーブに失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
         submitBtn.disabled = false;
-        submitBtn.textContent = 'セーブする';
+        document.getElementById('submitNote').textContent = '';
         return;
       }
       navigate(`summary/${data.release.id}`);
     } catch (e) {
-      alert('セーブに失敗しました: ' + e.message);
+      showToast('セーブに失敗しました: ' + e.message, true);
       submitBtn.disabled = false;
-      submitBtn.textContent = 'セーブする';
+      document.getElementById('submitNote').textContent = '';
     }
   });
 }
@@ -345,31 +569,36 @@ async function renderListView(root, projectId) {
   const releases = await res.json();
 
   root.innerHTML = `
-    <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
-    <h1 class="page-title">セーブポイント一覧</h1>
-    <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
-    <div class="actions" style="margin-bottom:14px;">
-      <button type="button" class="primary" data-role="go-new">+ 新規セーブ</button>
+    <div class="eyebrow">Savepoints</div>
+    <h1 class="page-title">セーブ管理</h1>
+    <div class="breadcrumb-row" style="margin-top:16px;">
+      <button type="button" data-role="back">← プロジェクト選択へ</button>
+      <span class="pname">${escapeHtml(project.project_name)}</span>
+      <div style="flex:1;"></div>
+      ${renderTabbar(projectId, 'list')}
     </div>
-    ${!releases.length ? '<div class="empty">セーブポイントはまだありません。</div>' : releases.map((r) => `
-      <div class="card release-row" data-release-id="${r.id}">
-        <div>
-          <span class="status-badge status-approved">セーブポイント v${r.resulting_version_no}</span>
-          <div class="meta-line">作成者: ${escapeHtml(r.requested_by)} / 作成日時: ${formatDate(r.created_at)} / 変更件数: ${r.change_count}件</div>
-          ${r.comment ? `<div class="meta-line">コメント: ${escapeHtml(r.comment)}</div>` : ''}
+    <div class="table-wrap">
+      <div class="sp-thead"><span>バージョン</span><span>作成者</span><span>作成日時</span><span>変更件数</span><span>コメント</span><span></span></div>
+      ${!releases.length ? '<div class="empty">このプロジェクトにはまだセーブポイントがありません。</div>' : releases.map((r) => `
+        <div class="sp-row" data-release-id="${r.id}">
+          <span class="version">v${r.resulting_version_no}</span>
+          <span class="author">${escapeHtml(r.requested_by)}</span>
+          <span class="created">${formatDate(r.created_at)}</span>
+          <span class="changes">${r.change_count}件</span>
+          <span class="comment">${escapeHtml(r.comment || '')}</span>
+          <span style="text-align:right;"><button type="button" data-role="go-detail">詳細</button></span>
         </div>
-        <div class="actions"><button type="button" data-role="go-detail">詳細を見る</button></div>
-      </div>
-    `).join('')}
+      `).join('')}
+    </div>
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));
-  root.querySelector('[data-role="go-new"]').addEventListener('click', () => navigate(`new/${projectId}`));
+  wireTabbar(root, projectId);
   root.querySelectorAll('[data-release-id]').forEach((row) => {
     row.querySelector('[data-role="go-detail"]').addEventListener('click', () => navigate(`detail/${row.dataset.releaseId}`));
   });
 }
 
-// 4. セーブポイント詳細画面（セーブは作成時点で確定するため、この画面は情報表示専用）
+// 4. セーブポイント詳細画面
 async function renderDetailView(root, releaseId) {
   const res = await apiFetch(`/api/releases/${releaseId}`);
   if (res.status === 401 || res.status === 403) {
@@ -381,28 +610,81 @@ async function renderDetailView(root, releaseId) {
     return;
   }
   const release = await res.json();
+  const project = projectsCache.find((p) => p.id === release.project_id) || (await (await apiFetch(`/api/projects/${release.project_id}`)).json());
 
   const changesRes = await apiFetch(`/api/projects/${release.project_id}/changes`);
   const allChanges = await changesRes.json();
   const includedChanges = allChanges.filter((c) => (release.change_ids || []).includes(c.id));
+  const allFiles = includedChanges.flatMap((c) => c.diff || []);
 
   root.innerHTML = `
-    <div class="breadcrumb"><a data-role="back">← セーブポイント一覧</a></div>
-    <h1 class="page-title">セーブポイント詳細</h1>
+    <div class="eyebrow">Savepoints</div>
+    <h1 class="page-title">セーブ管理</h1>
+    <div style="margin:16px 0 12px;"><button type="button" data-role="back">← 一覧へ戻る</button></div>
+
     <div class="card">
-      <div><span class="status-badge status-approved">セーブポイント v${release.resulting_version_no}</span></div>
-      <div class="meta-line">作成者: ${escapeHtml(release.requested_by)} / 作成日時: ${formatDate(release.created_at)} / 変更件数: ${release.change_count}件</div>
-      ${release.comment ? `<div class="meta-line">コメント: ${escapeHtml(release.comment)}</div>` : ''}
-      ${release.ai_review ? `<div class="ai-review-label">AIレビュー（参考情報）</div><div class="ai-review">${escapeHtml(release.ai_review)}</div>` : ''}
-    </div>
-    ${includedChanges.map((c) => `
-      <div class="card">
-        <div class="meta-line">検知日時: ${formatDate(c.detected_at)}</div>
-        ${diffTable(c.diff)}
+      <div class="breadcrumb-row" style="margin-bottom:0;">
+        <span class="version" style="font-family:var(--font-mono);font-size:21px;font-weight:700;color:var(--accent-dark);">v${release.resulting_version_no}</span>
+        <span class="pname">${escapeHtml(project.project_name)}</span>
+        <div style="flex:1;"></div>
+        <button type="button" class="danger" id="rollbackBtn" ${canEdit() ? '' : 'disabled title="復元にはDeveloper以上の権限が必要です"'}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 13a8 8 0 1 0 2.3-5.7"></path><path d="M4 6.5V13h6"></path></svg>
+          このセーブポイントに復元
+        </button>
       </div>
-    `).join('')}
+      <div class="meta-line" style="font-size:12.5px;color:var(--muted);margin-top:8px;">${escapeHtml(release.requested_by)} が ${formatDate(release.created_at)} にセーブ・${release.change_count}件の変更</div>
+      ${release.comment ? `<div style="margin-top:15px;padding:12px 14px;background:#f7f8fa;border:1px solid var(--divider);border-radius:8px;"><div style="font-size:11.5px;font-weight:700;color:var(--muted2);margin-bottom:4px;">セーブコメント</div><div style="font-size:13.5px;color:var(--text-body);line-height:1.75;">${escapeHtml(release.comment)}</div></div>` : ''}
+    </div>
+
+    <div id="reviewSlot">${release.ai_review ? renderReviewBox(release.ai_review, release.created_at) : renderReviewFailedBox(release.resulting_version_no, release.id)}</div>
+
+    <div class="table-wrap" style="margin-top:14px;">
+      <div style="padding:11px 18px;background:#fafbfc;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--text-mid);">このセーブポイントに含まれる変更</div>
+      <div style="padding:14px 18px;">${renderFileCards(allFiles, true)}</div>
+    </div>
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate(`list/${release.project_id}`));
+  wireFileToggles(root);
+  function handleReviewUpdated(updatedRelease) {
+    document.getElementById('reviewSlot').innerHTML = updatedRelease.ai_review
+      ? renderReviewBox(updatedRelease.ai_review, updatedRelease.created_at)
+      : renderReviewFailedBox(updatedRelease.resulting_version_no, updatedRelease.id);
+    wireRetryReview(root, handleReviewUpdated);
+  }
+  wireRetryReview(root, handleReviewUpdated);
+
+  document.getElementById('rollbackBtn').addEventListener('click', () => {
+    showConfirmDialog({
+      title: `v${release.resulting_version_no} の状態に復元しますか？`,
+      body: 'GAS側のコードがこのバージョンの内容に上書きされます。現在のコードは復元前セーブポイントとして自動保存されるため、やり直しは可能です。',
+      facts: [
+        { k: 'プロジェクト', v: project.project_name },
+        { k: '復元先', v: `v${release.resulting_version_no}（${formatDate(release.created_at)}）` },
+        { k: '影響範囲', v: 'GASのコード全体' },
+      ],
+      confirmLabel: `v${release.resulting_version_no} に復元する`,
+      onConfirm: async () => {
+        const fetchRes = await apiFetch(`/api/projects/${release.project_id}/fetch`, { method: 'POST' });
+        const fetchData = await fetchRes.json();
+        const expectedHash = fetchData.ok ? fetchData.source_hash : undefined;
+        const res = await apiFetch(`/api/projects/${release.project_id}/rollback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_version_no: release.resulting_version_no,
+            performed_by: window.__savepointUser || 'unknown',
+            expected_current_hash: expectedHash,
+          }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showToast('復元に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+          return;
+        }
+        showToast(`v${release.resulting_version_no} の状態に復元しました（復元前の状態は自動でセーブ済みです）。`);
+      },
+    });
+  });
 }
 
 // 5. セーブ完了画面
@@ -413,22 +695,38 @@ async function renderSummaryView(root, releaseId) {
     return;
   }
   const release = await res.json();
+  const project = projectsCache.find((p) => p.id === release.project_id) || (await (await apiFetch(`/api/projects/${release.project_id}`)).json());
 
   root.innerHTML = `
-    <div class="card summary-box">
-      <div class="big-status"><span class="status-badge status-approved">セーブポイント v${release.resulting_version_no}</span></div>
-      <div class="meta-line">セーブポイントとして記録されました（${release.change_count}件の変更をまとめました）。</div>
-      ${release.ai_review
-        ? `<div class="ai-review-label" style="text-align:left;">AIレビュー（参考情報）</div><div class="ai-review" style="text-align:left;">${escapeHtml(release.ai_review)}</div>`
-        : '<div class="meta-line">AIレビューは生成されませんでした（APIキー未設定等の場合があります）。</div>'}
-      <div class="actions" style="justify-content:center; margin-top:16px;">
-        <button type="button" data-role="go-detail">詳細を見る</button>
-        <button type="button" class="primary" data-role="go-list">セーブポイント一覧へ戻る</button>
+    <div class="eyebrow">Savepoints</div>
+    <h1 class="page-title">セーブ管理</h1>
+    <div style="height:16px;"></div>
+    <div class="card" style="border-top:3px solid var(--accent);">
+      <div class="head-row" style="display:flex;gap:14px;align-items:flex-start;">
+        <span class="icon-ok"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#1c8f58" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+        <div style="min-width:0;flex:1;">
+          <h2>セーブが完了しました</h2>
+          <div class="sub">${escapeHtml(project.project_name)} の現在のコードを <span style="font-family:var(--font-mono);font-weight:700;color:var(--accent-dark);">v${release.resulting_version_no}</span> として記録しました。この時点にはいつでも復元できます。</div>
+        </div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><div class="label">バージョン</div><div class="value-row"><span class="value" style="font-size:16px;">v${release.resulting_version_no}</span></div></div>
+        <div class="stat"><div class="label">変更件数</div><div class="value-row"><span class="value" style="font-size:16px;">${release.change_count}件</span></div></div>
+        <div class="stat"><div class="label">作成者</div><div class="value-row"><span class="value" style="font-size:13px;">${escapeHtml(release.requested_by)}</span></div></div>
+        <div class="stat"><div class="label">作成日時</div><div class="value-row"><span class="value" style="font-size:12.5px;">${formatDate(release.created_at)}</span></div></div>
+      </div>
+      <div class="actions-row">
+        <button type="button" data-role="go-detail">セーブポイントの詳細を見る</button>
+        <button type="button" data-role="go-list">セーブポイント一覧へ</button>
+        <button type="button" data-role="go-dash">ダッシュボードへ</button>
       </div>
     </div>
+    ${release.ai_review ? renderReviewBox(release.ai_review, release.created_at) : renderReviewFailedBox(release.resulting_version_no, release.id)}
   `;
   root.querySelector('[data-role="go-detail"]').addEventListener('click', () => navigate(`detail/${releaseId}`));
   root.querySelector('[data-role="go-list"]').addEventListener('click', () => navigate(`list/${release.project_id}`));
+  root.querySelector('[data-role="go-dash"]').addEventListener('click', () => { window.location.href = '/'; });
+  wireRetryReview(root, () => renderSummaryView(root, releaseId));
 }
 
 function canEdit() {
@@ -441,7 +739,7 @@ async function init() {
   if (status.dev_mode && status.email) {
     authHeaders = { 'X-Debug-User-Email': status.email };
   }
-  document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
+  document.getElementById('accountInfo').textContent = status.email || '';
   window.__savepointUser = status.email || 'unknown';
 
   try {

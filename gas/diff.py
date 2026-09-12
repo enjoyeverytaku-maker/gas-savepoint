@@ -4,6 +4,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 from typing import Any
 
 
@@ -28,7 +29,7 @@ def calculate_diff(
     current_files: list[dict[str, Any]],
     previous_files: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """直前セーブポイントとの差分をファイル単位で計算する。"""
+    """直前セーブポイントとの差分をファイル単位で計算する（行単位の差分付き）。"""
     previous_by_key = _index_files(previous_files or [])
     current_by_key = _index_files(current_files)
 
@@ -36,7 +37,7 @@ def calculate_diff(
     for key in sorted(current_by_key.keys() - previous_by_key.keys()):
         current = current_by_key[key]
         added = len(_split_lines(current.get("source", "")))
-        results.append(_diff_result(current, "Added", added, 0))
+        results.append(_diff_result(current, "Added", added, 0, "", current.get("source", "")))
 
     for key in sorted(previous_by_key.keys() & current_by_key.keys()):
         previous = previous_by_key[key]
@@ -44,12 +45,12 @@ def calculate_diff(
         if previous.get("source", "") == current.get("source", ""):
             continue
         added, deleted = _count_changed_lines(previous.get("source", ""), current.get("source", ""))
-        results.append(_diff_result(current, "Modified", added, deleted))
+        results.append(_diff_result(current, "Modified", added, deleted, previous.get("source", ""), current.get("source", "")))
 
     for key in sorted(previous_by_key.keys() - current_by_key.keys()):
         previous = previous_by_key[key]
         deleted = len(_split_lines(previous.get("source", "")))
-        results.append(_diff_result(previous, "Deleted", 0, deleted))
+        results.append(_diff_result(previous, "Deleted", 0, deleted, previous.get("source", ""), ""))
 
     return results
 
@@ -79,7 +80,48 @@ def _count_changed_lines(previous_source: str, current_source: str) -> tuple[int
     return added, deleted
 
 
-def _diff_result(file: dict[str, Any], status: str, added: int, deleted: int) -> dict[str, Any]:
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
+
+
+def _diff_lines(previous_source: str, current_source: str, context: int = 3) -> list[dict[str, Any]]:
+    """git風のハント形式で行単位の差分を組み立てる（画面表示用）。"""
+    previous_lines = _split_lines(previous_source)
+    current_lines = _split_lines(current_source)
+    unified = list(
+        difflib.unified_diff(previous_lines, current_lines, n=context, lineterm="")
+    )[2:]  # 先頭2行（---/+++ヘッダー）は画面表示に不要なので除く
+
+    result: list[dict[str, Any]] = []
+    a_line = b_line = 0
+    for line in unified:
+        if line.startswith("@@"):
+            match = _HUNK_HEADER_RE.match(line)
+            if match:
+                a_line = int(match.group(1))
+                b_line = int(match.group(2))
+            result.append({"type": "header", "a": None, "b": None, "text": line})
+            continue
+        if line.startswith("+"):
+            result.append({"type": "insert", "a": None, "b": b_line, "text": line[1:]})
+            b_line += 1
+        elif line.startswith("-"):
+            result.append({"type": "delete", "a": a_line, "b": None, "text": line[1:]})
+            a_line += 1
+        else:
+            result.append({"type": "context", "a": a_line, "b": b_line, "text": line[1:] if line.startswith(" ") else line})
+            a_line += 1
+            b_line += 1
+    return result
+
+
+def _diff_result(
+    file: dict[str, Any],
+    status: str,
+    added: int,
+    deleted: int,
+    previous_source: str,
+    current_source: str,
+) -> dict[str, Any]:
     """差分レスポンスの1件を組み立てる。"""
     return {
         "name": file.get("name", ""),
@@ -87,4 +129,5 @@ def _diff_result(file: dict[str, Any], status: str, added: int, deleted: int) ->
         "status": status,
         "added_lines": added,
         "deleted_lines": deleted,
+        "lines": _diff_lines(previous_source, current_source),
     }

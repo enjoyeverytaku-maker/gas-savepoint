@@ -24,7 +24,7 @@ from .apps_script import fetch_source_files
 from .audit import ACTION_RELEASE_REQUEST, log_operation
 from .changes import detect_change, get_unreleased_changes, mark_changes_released
 from .projects import get_project
-from .savepoints import create_savepoint, get_latest_savepoint
+from .savepoints import create_savepoint, get_latest_savepoint, get_savepoint_by_version
 
 
 COLLECTION = "releases"
@@ -112,12 +112,50 @@ def get_release(release_id: str) -> dict[str, Any] | None:
     return serialize_release(snapshot)
 
 
-def _try_generate_review(project_name: str, previous_files: list[dict[str, Any]], current_files: list[dict[str, Any]]) -> str | None:
+def regenerate_review(release_id: str) -> dict[str, Any]:
+    """AIレビューの生成に失敗していたセーブポイントについて、再生成を試みる。"""
+    release = get_release(release_id)
+    if release is None:
+        raise ReleaseNotFoundError(f"セーブポイントが見つかりません: {release_id}")
+
+    project_id = release["project_id"]
+    project = get_project(project_id)
+    if project is None:
+        raise ReleaseNotFoundError(f"GASプロジェクトが見つかりません: {project_id}")
+
+    current_version_no = release["resulting_version_no"]
+    current_savepoint = get_savepoint_by_version(project_id, current_version_no)
+    previous_savepoint = get_savepoint_by_version(project_id, current_version_no - 1) if current_version_no > 1 else None
+    current_files = current_savepoint["source_files"] if current_savepoint else []
+    previous_files = previous_savepoint["source_files"] if previous_savepoint else []
+
+    ai_review = _try_generate_review(project["project_name"], previous_files, current_files)
+    db().collection(COLLECTION).document(release_id).update({"ai_review": ai_review})
+    updated = get_release(release_id)
+    if updated is None:
+        raise ReleaseNotFoundError(f"セーブポイントが見つかりません: {release_id}")
+    return updated
+
+
+def _try_generate_review(
+    project_name: str, previous_files: list[dict[str, Any]], current_files: list[dict[str, Any]]
+) -> dict[str, Any] | None:
     """AIレビューをベストエフォートで生成する（失敗してもセーブ自体は止めない）。"""
     try:
-        return generate_change_review(project_name, previous_files, current_files)
+        review = generate_change_review(project_name, previous_files, current_files)
     except Exception:
         return None
+    if review is None:
+        return None
+    review["generated_at"] = _now_iso()
+    return review
+
+
+def _now_iso() -> str:
+    """現在時刻をISO文字列で返す（AIレビュー生成時刻の記録用）。"""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
 
 
 def serialize_release(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:

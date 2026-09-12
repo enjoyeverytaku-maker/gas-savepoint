@@ -81,6 +81,15 @@ def changes_page(request: Request):
     return templates.TemplateResponse(request, "changes.html")
 
 
+@app.get("/users")
+def users_page(request: Request):
+    """グローバルユーザー管理画面（Owner限定、/api/usersはT9で実装済みだが対応画面が無かったギャップを解消）。
+
+    閲覧・操作の権限はAPI側（require_role("owner")）で強制する。
+    """
+    return templates.TemplateResponse(request, "users.html")
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

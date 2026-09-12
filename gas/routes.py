@@ -30,6 +30,7 @@ from .releases import (
     create_release,
     get_release,
     list_releases,
+    regenerate_review,
 )
 from .rollback import RollbackConflictError, RollbackTargetNotFoundError, rollback_to_version
 from .savepoints import get_latest_savepoint, list_savepoints
@@ -378,12 +379,23 @@ def get_project_releases(project_id: str, actor: str = Depends(require_project_r
 
 @router.get("/releases/{release_id}")
 def get_release_detail(release_id: str, request: Request):
-    """リリース申請1件の詳細を返す（T21リリース詳細画面向け）。"""
+    """セーブポイント1件の詳細を返す（T21セーブポイント詳細画面向け）。"""
     _require_release_project_role(request, release_id, "viewer")
     release = get_release(release_id)
     if release is None:
-        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"リリース申請が見つかりません: {release_id}"}})
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"セーブポイントが見つかりません: {release_id}"}})
     return release
+
+
+@router.post("/releases/{release_id}/regenerate-review")
+def post_regenerate_review(release_id: str, request: Request):
+    """AIレビューの生成に失敗していたセーブポイントについて、再生成を試みる（対象プロジェクトDeveloper以上）。"""
+    _require_release_project_role(request, release_id, "developer")
+    try:
+        release = regenerate_review(release_id)
+    except ReleaseNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
+    return {"ok": True, "release": release}
 
 
 @router.post("/projects/{project_id}/rollback")

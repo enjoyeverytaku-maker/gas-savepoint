@@ -4,228 +4,294 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SavePoint ダッシュボード</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root {
     color-scheme: light;
     --sidebar-bg: #14161b;
     --sidebar-text: #d6d8dc;
-    --sidebar-muted: #8b9099;
-    --sidebar-active-bg: #23262d;
-    --bg: #f7f8fa;
+    --sidebar-muted: #7d838e;
+    --sidebar-muted2: #aab0ba;
+    --sidebar-box-bg: #1b1e25;
+    --sidebar-box-border: #2a2e37;
+    --bg: #f5f6f8;
     --card-bg: #ffffff;
-    --border: #e3e5e9;
+    --border: #e4e7ec;
+    --border-strong: #d5d9e0;
+    --divider: #f0f2f5;
     --text: #16181d;
-    --muted: #767c86;
-    --ok: #23b26d;
-    --warn: #b7791f;
-    --error: #c0392b;
+    --text-strong: #2a2e37;
+    --text-mid: #4b5158;
+    --text-body: #3a3f47;
+    --muted: #6b7280;
+    --muted2: #8a9099;
     --accent: #23b26d;
     --accent-dark: #1c8f58;
+    --accent-bg: #eaf7f0;
+    --accent-border: #b7e4cd;
+    --warn: #dd9b1f;
+    --warn-dark: #b7791f;
+    --warn-bg: #fdf3e0;
+    --warn-text: #8a6620;
+    --error: #c0392b;
+    --error-dark: #96342a;
+    --error-bg: #fdf2f0;
+    --error-border: #f0cdc8;
+    --error-border2: #e3b6b1;
+    --code-bg: #f4f6f8;
+    --font-sans: 'IBM Plex Sans', 'Noto Sans JP', system-ui, sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; min-height: 100%; }
   body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    font-family: var(--font-sans);
     background: var(--bg);
     color: var(--text);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
   }
-  .app { display: flex; min-height: 100vh; }
+  .app { display: flex; min-height: 100vh; align-items: stretch; }
   .sidebar {
-    width: 220px;
-    flex-shrink: 0;
+    width: 248px;
+    flex: 0 0 248px;
     background: var(--sidebar-bg);
     color: var(--sidebar-text);
-    padding: 24px 16px;
-    position: fixed;
+    padding: 22px 14px 16px;
+    position: sticky;
     top: 0;
-    bottom: 0;
-    left: 0;
+    align-self: flex-start;
+    height: 100vh;
     display: flex;
     flex-direction: column;
   }
-  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar .brand-row { display: flex; align-items: center; gap: 10px; padding: 0 8px 20px; }
+  .sidebar .brand-icon {
+    width: 30px; height: 30px; flex: 0 0 30px; border-radius: 8px;
+    background: var(--accent); display: flex; align-items: center; justify-content: center;
+  }
+  .sidebar .brand-name { color: #fff; font-size: 15.5px; font-weight: 700; letter-spacing: -.005em; }
+  .sidebar .brand-sub { color: var(--sidebar-muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
   .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
   .sidebar nav a {
-    color: var(--sidebar-text);
-    text-decoration: none;
-    font-size: 13px;
-    padding: 9px 10px;
-    border-radius: 6px;
+    display: flex; align-items: center; gap: 10px;
+    color: var(--sidebar-muted2); text-decoration: none; font-size: 13.5px;
+    padding: 9px 10px; border-radius: 7px;
   }
-  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
-  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar nav a svg { flex: 0 0 16px; }
+  .sidebar nav a:hover { background: #23262d; }
+  .sidebar nav a.active { background: #23262d; color: #fff; font-weight: 600; }
   .sidebar nav a[hidden] { display: none; }
-  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
-  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
-  main { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+  .sidebar .unsaved-box {
+    margin-top: 18px; padding: 12px; border-radius: 8px;
+    background: var(--sidebar-box-bg); border: 1px solid var(--sidebar-box-border);
+  }
+  .sidebar .unsaved-box .label { font-size: 10px; letter-spacing: .08em; color: var(--sidebar-muted); text-transform: uppercase; margin-bottom: 5px; }
+  .sidebar .unsaved-box .count { font-size: 22px; font-weight: 700; color: #f0c36d; font-variant-numeric: tabular-nums; }
+  .sidebar .unsaved-box .unit { font-size: 12px; color: var(--sidebar-muted2); }
+  .sidebar .unsaved-box .hint { font-size: 11px; color: var(--sidebar-muted); margin-top: 4px; line-height: 1.5; }
+  .sidebar .account-box { margin-top: auto; padding-top: 18px; }
+  .sidebar .account-box .inner { padding: 11px 12px; border-radius: 8px; background: var(--sidebar-box-bg); border: 1px solid var(--sidebar-box-border); }
+  .sidebar .account-box .dot-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .sidebar .account-box .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgba(35,178,109,.18); }
+  .sidebar .account-box .label { font-size: 10px; letter-spacing: .06em; color: var(--sidebar-muted); text-transform: uppercase; }
+  .sidebar .account-box .email { font-size: 12px; color: #e4e6ea; word-break: break-all; font-family: var(--font-mono); }
+  .sidebar .account-box .role { margin-top: 7px; display: inline-block; padding: 2px 8px; border-radius: 5px; background: #23262d; color: var(--sidebar-muted2); font-size: 10.5px; font-weight: 700; }
+  .main-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  main { padding: 26px 32px 56px; max-width: 1180px; width: 100%; margin: 0 auto; }
+  .eyebrow { font-size: 10.5px; letter-spacing: .11em; text-transform: uppercase; color: var(--muted2); font-weight: 600; }
+  h1.page-title { margin: 2px 0 0; font-size: 23px; font-weight: 700; letter-spacing: -.01em; }
+  .top-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
   .connect-banner {
-    background: #fff7e6;
-    border: 1px solid #f0c36d;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin-bottom: 20px;
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--warn-bg); border: 1px solid #f0c36d; border-left: 4px solid var(--warn-dark);
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
   }
-  .connect-banner a {
-    display: inline-block;
-    margin-top: 8px;
-    background: var(--accent);
-    color: #fff;
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 14px;
+  .connect-banner a.btn {
+    flex: 0 0 auto; font-size: 13px; font-weight: 600; color: #fff; background: var(--warn-dark);
+    border: 1px solid var(--warn-dark); border-radius: 8px; padding: 8px 14px; text-decoration: none;
   }
+  .auth-error-banner {
+    display: flex; gap: 13px; align-items: flex-start;
+    background: var(--error-bg); border: 1px solid var(--error-border); border-left: 4px solid var(--error);
+    border-radius: 10px; padding: 14px 18px; margin-bottom: 20px;
+  }
+  .auth-error-banner .title { font-size: 14px; font-weight: 700; color: var(--error-dark); }
+  .auth-error-banner .body { font-size: 13px; color: var(--error-dark); margin-top: 3px; }
   .summary {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-    margin-bottom: 24px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(176px, 1fr)); gap: 13px; margin-bottom: 28px;
   }
   .summary .card {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px;
-    text-align: center;
+    text-align: left; background: var(--card-bg); border: 1px solid var(--border); border-radius: 11px;
+    padding: 16px 17px; cursor: pointer; box-shadow: 0 1px 2px rgba(16,24,40,.04); display: block; font: inherit;
   }
-  .summary .card .num { font-size: 28px; font-weight: 700; }
-  .summary .card .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
-  .summary .card.warn .num { color: var(--warn); }
-  .summary .card.error .num { color: var(--error); }
-  h1.page-title { font-size: 20px; margin: 0 0 20px; }
-  h2.section-title { font-size: 15px; margin: 0 0 10px; }
-  .release-panel { margin-bottom: 24px; }
-  .release-list { display: flex; flex-direction: column; gap: 10px; }
-  .release-item {
-    background: var(--card-bg);
-    border: 1px solid #f0c36d;
-    border-radius: 8px;
-    padding: 14px 18px;
+  .summary .card.selected { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(35,178,109,.14); }
+  .summary .card .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .summary .card .label { font-size: 12.5px; font-weight: 600; color: var(--text-mid); }
+  .summary .card .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted2); }
+  .summary .card .num-row { display: flex; align-items: baseline; gap: 7px; margin-top: 8px; }
+  .summary .card .num { font-size: 30px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .summary .card .unit { font-size: 11px; color: var(--muted2); }
+  h2.section-title { margin: 0; font-size: 15.5px; font-weight: 700; }
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; flex-wrap: wrap; }
+  .section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 11px; flex-wrap: wrap; }
+  .section-sub { font-size: 12px; color: var(--muted2); }
+  .unsaved-list { display: flex; flex-direction: column; gap: 10px; margin: 11px 0 30px; }
+  .unsaved-item {
+    background: var(--card-bg); border: 1px solid var(--border); border-left: 4px solid var(--warn-dark);
+    border-radius: 10px; padding: 14px 18px; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
   }
-  .release-item .row1 {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .release-item .project-name { font-weight: 600; font-size: 14px; }
-  .release-item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  .release-item .comment { font-size: 13px; margin-top: 6px; }
-  .release-item .actions { margin-top: 10px; display: flex; gap: 8px; }
-  .release-empty {
-    color: var(--muted);
-    font-size: 13px;
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 18px;
-  }
+  .unsaved-item .badge-pill { padding: 3px 9px; border-radius: 20px; background: var(--warn-bg); color: var(--warn-text); font-size: 11px; font-weight: 700; }
+  .unsaved-item .project-name { font-size: 15px; font-weight: 700; }
+  .unsaved-item .meta { font-size: 12.5px; color: var(--muted); margin-top: 5px; }
+  .empty-dashed { background: var(--card-bg); border: 1px dashed var(--border-strong); border-radius: 10px; padding: 22px; text-align: center; color: var(--muted); font-size: 13px; }
+  .filter-chip { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-mid); }
+  .filter-chip .tag { padding: 4px 10px; border-radius: 20px; background: #eef1f4; border: 1px solid #e0e4e9; font-weight: 600; }
+  .filter-chip button { font-size: 12.5px; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0; }
   .project-list { display: flex; flex-direction: column; gap: 12px; }
-  .project-card {
-    background: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 16px 20px;
-  }
-  .project-card .row1 {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .project-card .name { font-size: 16px; font-weight: 600; }
-  .project-card .script-id { font-size: 12px; color: var(--muted); }
-  .status-badge { font-size: 13px; font-weight: 600; white-space: nowrap; }
-  .status-badge.ok { color: var(--ok); }
-  .status-badge.warn { color: var(--warn); }
-  .status-badge.error { color: var(--error); }
-  .status-badge.loading { color: var(--muted); }
-  .project-card .meta {
-    font-size: 13px;
-    color: var(--muted);
-    margin-top: 6px;
-  }
-  .project-card .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-  .action-hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+  .project-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
+  .project-card .row1 { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 18px; flex-wrap: wrap; }
+  .project-card .name { font-size: 15.5px; font-weight: 700; }
+  .project-card .type-tag { padding: 2px 7px; border-radius: 5px; background: #eef1f4; color: #5b6270; font-size: 10.5px; font-weight: 700; }
+  .project-card .script-id { font-size: 11.5px; color: var(--muted2); margin-top: 3px; font-family: var(--font-mono); word-break: break-all; }
+  .project-card .meta-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-top: 9px; }
+  .status-badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .status-badge.ok { background: var(--accent-bg); color: var(--accent-dark); }
+  .status-badge.ok .dot { background: var(--accent); }
+  .status-badge.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .status-badge.warn .dot { background: var(--warn-dark); }
+  .status-badge.error { background: var(--error-bg); color: var(--error-dark); }
+  .status-badge.error .dot { background: var(--error); }
+  .status-badge.loading { background: #eef1f4; color: var(--muted); }
+  .status-badge.loading .dot { background: var(--muted2); }
+  .project-card .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 18px 16px; }
+  .action-hint { font-size: 11px; color: var(--muted); line-height: 1.6; padding: 0 18px 14px; }
   button {
-    font-size: 13px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: #fff;
-    cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 600; color: var(--text-strong);
+    padding: 8px 13px; border-radius: 8px; border: 1px solid var(--border-strong);
+    background: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
   }
-  button:hover { background: #f0f2f5; }
-  button:disabled { opacity: 0.5; cursor: default; }
+  button:hover { background: #f7f8fa; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
   button.primary, a.primary {
-    background: var(--accent);
-    color: #fff;
-    border-color: var(--accent);
-    font-size: 13px;
-    padding: 6px 12px;
-    border-radius: 6px;
-    border: 1px solid var(--accent);
-    text-decoration: none;
-    display: inline-block;
-    cursor: pointer;
+    background: var(--accent); color: #fff; border-color: var(--accent);
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
   }
   button.primary:hover, a.primary:hover { background: var(--accent-dark); }
-  button.danger { color: var(--error); border-color: var(--error); }
-  .diff-detail {
-    margin-top: 10px;
-    border-top: 1px solid var(--border);
-    padding-top: 10px;
-    font-size: 13px;
-    display: none;
-  }
+  button.danger { color: var(--error); border-color: var(--error-border2); }
+  @keyframes spSpin { to { transform: rotate(360deg); } }
+  .spin { animation: spSpin .8s linear infinite; }
+  .diff-detail { border-top: 1px solid var(--border); background: #fbfcfd; padding: 16px 18px; display: none; }
   .diff-detail.open { display: block; }
-  .diff-detail table { width: 100%; border-collapse: collapse; }
-  .diff-detail th, .diff-detail td {
-    text-align: left;
-    padding: 4px 6px;
-    border-bottom: 1px solid var(--border);
-  }
-  .diff-detail .added { color: var(--ok); }
-  .diff-detail .deleted { color: var(--error); }
+  .diff-detail .diff-head { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; flex-wrap: wrap; font-size: 12.5px; font-weight: 700; color: var(--text-body); }
+  .diff-file { border: 1px solid var(--border); border-radius: 8px; background: #fff; margin-bottom: 10px; overflow: hidden; }
+  .diff-file .file-head { display: flex; align-items: center; gap: 10px; padding: 9px 13px; background: var(--code-bg); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .diff-file .file-head .fname { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; }
+  .diff-file .file-head .status-tag { padding: 1px 6px; border-radius: 4px; background: #e6eaef; color: #5b6270; font-size: 10.5px; font-weight: 700; }
+  .diff-file .file-head .counts { margin-left: auto; font-family: var(--font-mono); font-size: 12px; }
+  .diff-lines { font-family: var(--font-mono); font-size: 12px; line-height: 1.75; overflow-x: auto; }
+  .diff-lines .ln { display: flex; }
+  .diff-lines .ln .a, .diff-lines .ln .b { flex: 0 0 42px; text-align: right; padding-right: 8px; color: #b3b9c2; user-select: none; }
+  .diff-lines .ln .b { padding-right: 10px; }
+  .diff-lines .ln .sign { flex: 0 0 16px; color: var(--muted2); }
+  .diff-lines .ln .text { white-space: pre-wrap; word-break: break-word; padding-right: 12px; }
+  .diff-lines .ln.insert { background: var(--accent-bg); }
+  .diff-lines .ln.delete { background: var(--error-bg); }
+  .diff-lines .ln.header { background: var(--code-bg); color: var(--muted); }
+  .added { color: var(--accent-dark); font-weight: 600; }
+  .deleted { color: var(--error); font-weight: 600; }
   .empty, .loading-text { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
-  .error-message { color: var(--error); font-size: 12px; margin-top: 6px; }
+  .error-message { color: var(--error-dark); font-size: 12.5px; margin: 0 18px 12px; }
+  @keyframes spFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .toast {
+    position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); z-index: 70;
+    display: flex; align-items: center; gap: 11px; background: var(--sidebar-bg); color: #fff;
+    border-radius: 10px; padding: 13px 18px; box-shadow: 0 14px 40px rgba(10,14,20,.34); max-width: 520px;
+    font-size: 13.5px; line-height: 1.5; animation: spFade .2s ease-out;
+  }
+  .toast.error { background: var(--error-dark); }
+  .toast .icon { width: 20px; height: 20px; flex: 0 0 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--accent); }
+  .toast.error .icon { background: #fff; }
 </style>
 </head>
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand">SavePoint</div>
+    <div class="brand-row">
+      <div class="brand-icon">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>
+      </div>
+      <div>
+        <div class="brand-name">SavePoint</div>
+        <div class="brand-sub">GAS 変更管理</div>
+      </div>
+    </div>
     <nav>
-      <a href="/" class="active">ダッシュボード</a>
-      <a href="/ledger">台帳</a>
-      <a href="/releases">セーブ管理</a>
-      <a href="/changes">変更履歴</a>
-      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
-      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
+      <a href="/" class="active"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"></rect><rect x="14" y="3" width="7" height="7" rx="1.5"></rect><rect x="3" y="14" width="7" height="7" rx="1.5"></rect><rect x="14" y="14" width="7" height="7" rx="1.5"></rect></svg>ダッシュボード</a>
+      <a href="/ledger"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v16H5.5A1.5 1.5 0 0 1 4 18.5z"></path><path d="M8 4v16"></path></svg>台帳</a>
+      <a href="/releases"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>セーブ管理</a>
+      <a href="/changes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="6.5" cy="5.5" r="2.5"></circle><circle cx="6.5" cy="18.5" r="2.5"></circle><circle cx="17.5" cy="9" r="2.5"></circle><path d="M6.5 8v8"></path><path d="M17.5 11.5c0 3-3 4-6 4.5"></path></svg>変更履歴</a>
+      <a href="/audit-log" id="auditLogLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z"></path><path d="M9.2 12.2l2 2 3.6-3.8"></path></svg>監査ログ</a>
+      <a href="/users" id="usersLink" hidden><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"></circle><path d="M3.5 19c1-3.2 3.3-5 5.5-5s4.5 1.8 5.5 5"></path><circle cx="17.5" cy="8.5" r="2.4"></circle><path d="M15.5 14c1.8.3 3.4 1.7 4 4.5"></path></svg>ユーザー管理</a>
     </nav>
-    <div class="account-info" id="accountInfo"></div>
+    <div class="unsaved-box">
+      <div class="label">未セーブの変更</div>
+      <div><span class="count" id="unsavedCount">0</span> <span class="unit">件のプロジェクト</span></div>
+      <div class="hint">セーブするまで履歴に残りません</div>
+    </div>
+    <div class="account-box">
+      <div class="inner">
+        <div class="dot-row"><span class="dot"></span><span class="label">接続中のGoogleアカウント</span></div>
+        <div class="email" id="accountInfo"></div>
+      </div>
+    </div>
   </aside>
   <div class="main-content">
     <main>
-      <h1 class="page-title">ダッシュボード</h1>
-      <div id="connectBanner" class="connect-banner" style="display:none;">
-        Googleアカウントが未接続です。GASのソース取得・セーブポイント作成にはアカウント接続が必要です。
-        <br>
-        <a href="/oauth/connect">Googleアカウントを接続する</a>
+      <div class="top-row">
+        <div>
+          <div class="eyebrow">Dashboard</div>
+          <h1 class="page-title">ダッシュボード</h1>
+        </div>
       </div>
 
-      <div class="summary" id="summary" style="display:none;">
-        <div class="card"><div class="num" id="sumTotal">0</div><div class="label">GAS Projects</div></div>
-        <div class="card warn"><div class="num" id="sumChanged">0</div><div class="label">変更あり</div></div>
-        <div class="card"><div class="num" id="sumUnchanged">0</div><div class="label">変更なし</div></div>
-        <div class="card error"><div class="num" id="sumError">0</div><div class="label">認証エラー</div></div>
+      <div id="connectBanner" class="connect-banner" style="display:none;">
+        <div style="flex:1;">
+          <div style="font-weight:700;color:#7a5410;">Googleアカウントが未接続です</div>
+          <div style="font-size:13px;color:#8a6620;margin-top:3px;">GASのソース取得・セーブポイント作成にはアカウント接続が必要です。</div>
+        </div>
+        <a href="/oauth/connect" class="btn">Googleアカウントを接続する</a>
       </div>
+
+      <div id="authErrorBanner" class="auth-error-banner" style="display:none;">
+        <div style="flex:1;">
+          <div class="title"><span id="authErrorCount">0</span>件のプロジェクトでGASのコードを取得できていません</div>
+          <div class="body">Googleアカウントの認可が期限切れになっている可能性があります。再接続するまで、そのプロジェクトの変更検知とセーブはできません。</div>
+        </div>
+      </div>
+
+      <div class="summary" id="summary" style="display:none;"></div>
 
       <div class="release-panel" id="releasePanel" style="display:none;">
-        <h2 class="section-title">未セーブの変更</h2>
-        <div class="release-list" id="releaseList"></div>
+        <div class="section-head">
+          <h2 class="section-title">未セーブの変更</h2>
+          <span class="section-sub">自動検知で見つかった、まだセーブポイントに記録していない変更</span>
+        </div>
+        <div class="unsaved-list" id="releaseList"></div>
+      </div>
+
+      <div class="section-head-row">
+        <div class="section-head" style="margin-bottom:0;">
+          <h2 class="section-title">登録済みGASプロジェクト</h2>
+          <span class="section-sub" id="projectCountText"></span>
+        </div>
+        <div class="filter-chip" id="filterChip" style="display:none;">
+          <span class="tag" id="filterLabel"></span>
+          <button type="button" id="clearFilterBtn">解除</button>
+        </div>
       </div>
 
       <div id="projectList" class="project-list"></div>
@@ -234,8 +300,23 @@
     </main>
   </div>
 </div>
+<div id="toastContainer"></div>
 
 <script>
+function showToast(message, isError) {
+  const container = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' error' : '');
+  el.innerHTML = `
+    <span class="icon">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${isError ? '#c0392b' : '#0c1a13'}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${isError ? '<path d="M12 4.5l8.5 15H3.5zM12 10v4"></path>' : '<path d="M5 12.5l4.5 4.5L19 7.5"></path>'}</svg>
+    </span>
+    <span>${escapeHtml(message)}</span>
+  `;
+  container.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
 const listEl = document.getElementById('projectList');
 const loadingEl = document.getElementById('loadingText');
 const emptyEl = document.getElementById('emptyText');
@@ -248,17 +329,10 @@ const releaseListEl = document.getElementById('releaseList');
 let projectsById = {};
 let authHeaders = {};
 let currentUserRole = null;
+let currentFilter = null;
 
-// 注: currentUserRoleはグローバルロール（/api/me）のみを見た簡易表示用ヒント。
-// プロジェクト単位のロール（T20、gas_projects/{id}/membersでの上書き）は個別に
-// フェッチしていないため、プロジェクトごとに実際の権限と食い違う場合がある
-// （実際の許可判定は常にサーバー側require_project_roleが行うため安全側には倒れる）。
 function canEdit() {
   return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
-}
-
-function isAdmin() {
-  return currentUserRole === 'owner';
 }
 
 async function apiFetch(url, options = {}) {
@@ -286,17 +360,26 @@ function renderCard(project) {
   card.innerHTML = `
     <div class="row1">
       <div>
-        <div class="name">${escapeHtml(project.project_name)}</div>
+        <div><span class="name">${escapeHtml(project.project_name)}</span></div>
         <div class="script-id">${escapeHtml(project.script_id)}</div>
+        <div class="meta-row" data-role="meta">最終セーブ：確認中...</div>
       </div>
-      <div class="status-badge loading" data-role="status">● 確認中...</div>
+      <div class="status-badge loading" data-role="status"><span class="dot"></span>確認中...</div>
     </div>
-    <div class="meta" data-role="meta">最終保存：確認中...</div>
     <div class="error-message" data-role="error" style="display:none;"></div>
     <div class="actions">
-      <button type="button" data-role="diff-toggle" disabled>差分を見る</button>
-      <button type="button" data-role="detect" disabled>変更を検知</button>
-      <a href="/releases#new/${project.id}" class="primary">セーブ画面へ →</a>
+      <button type="button" data-role="diff-toggle" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M7 4v16"></path><path d="M17 4v16"></path><path d="M4 9h6"></path><path d="M14 15h6"></path></svg>
+        <span data-role="diff-label">差分を見る</span>
+      </button>
+      <button type="button" data-role="detect" disabled>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" data-role="detect-icon"><path d="M20 11a8 8 0 1 0-2.3 5.7"></path><path d="M20 4.5V11h-6"></path></svg>
+        変更を検知
+      </button>
+      <a href="/releases#new/${project.id}" class="primary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>
+        セーブ画面へ
+      </a>
     </div>
     <div class="action-hint">GASの保存内容は編集した瞬間に反映されます。ここでの操作は「その変更を正式な記録として残すかどうか」を管理するものです。変更を検知＝今すぐチェックして変更履歴に記録（定期チェックを待たずに反映）／セーブ＝検知済みの変更をまとめてセーブポイントとして記録（AIが影響レビューを自動生成）</div>
     <div class="diff-detail" data-role="diff-detail"></div>
@@ -304,19 +387,26 @@ function renderCard(project) {
   return card;
 }
 
+function renderDiffLine(ln) {
+  const cls = ln.type === 'insert' ? 'insert' : ln.type === 'delete' ? 'delete' : ln.type === 'header' ? 'header' : '';
+  const sign = ln.type === 'insert' ? '+' : ln.type === 'delete' ? '-' : '';
+  return `<div class="ln ${cls}"><span class="a">${ln.a ?? ''}</span><span class="b">${ln.b ?? ''}</span><span class="sign">${sign}</span><span class="text">${escapeHtml(ln.text)}</span></div>`;
+}
+
 function renderDiffTable(diff) {
   if (!diff || diff.length === 0) {
-    return '<div>変更はありません。</div>';
+    return '<div style="color:var(--muted);font-size:13px;">変更はありません。</div>';
   }
-  const rows = diff.map((f) => `
-    <tr>
-      <td>${escapeHtml(f.name)}</td>
-      <td>${escapeHtml(f.status)}</td>
-      <td class="added">+${f.added_lines}</td>
-      <td class="deleted">-${f.deleted_lines}</td>
-    </tr>
+  return diff.map((f) => `
+    <div class="diff-file">
+      <div class="file-head">
+        <span class="fname">${escapeHtml(f.name)}</span>
+        <span class="status-tag">${escapeHtml(f.status)}</span>
+        <span class="counts"><span class="added">+${f.added_lines}</span> <span class="deleted">-${f.deleted_lines}</span></span>
+      </div>
+      <div class="diff-lines">${(f.lines || []).map(renderDiffLine).join('')}</div>
+    </div>
   `).join('');
-  return `<table><thead><tr><th>ファイル</th><th>状態</th><th>追加</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 async function refreshProjectState(card, project) {
@@ -329,6 +419,7 @@ async function refreshProjectState(card, project) {
 
   errorEl.style.display = 'none';
   diffDetailEl.classList.remove('open');
+  card.querySelector('[data-role="diff-label"]').textContent = '差分を見る';
 
   let savepoints = [];
   try {
@@ -338,14 +429,15 @@ async function refreshProjectState(card, project) {
     savepoints = [];
   }
   const latest = savepoints[0];
-  metaEl.textContent = `最終セーブ：${formatDate(latest ? latest.created_at : null)}`;
+  card.dataset.version = latest ? latest.version_no : 0;
+  metaEl.innerHTML = `<span>最終セーブ v${latest ? latest.version_no : 0}・${formatDate(latest ? latest.created_at : null)}</span><span>${escapeHtml(project.department || '')}</span>`;
 
   const fetchRes = await apiFetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
   const fetchData = await fetchRes.json();
 
   if (!fetchData.ok) {
     statusEl.className = 'status-badge error';
-    statusEl.textContent = '✕ 認証エラー';
+    statusEl.innerHTML = '<span class="dot"></span>認証エラー';
     errorEl.style.display = 'block';
     errorEl.textContent = fetchData.error ? fetchData.error.message : '不明なエラーです';
     diffToggleBtn.disabled = true;
@@ -357,11 +449,12 @@ async function refreshProjectState(card, project) {
   const diff = fetchData.diff || [];
   diffToggleBtn.disabled = false;
   detectBtn.disabled = !canEdit();
+  diffDetailEl.dataset.diff = JSON.stringify(diff);
   diffDetailEl.innerHTML = renderDiffTable(diff);
 
   if (diff.length === 0) {
     statusEl.className = 'status-badge ok';
-    statusEl.textContent = '✓ 変更なし';
+    statusEl.innerHTML = '<span class="dot"></span>変更なし';
     card.dataset.state = 'unchanged';
     return { state: 'unchanged' };
   }
@@ -369,56 +462,107 @@ async function refreshProjectState(card, project) {
   const added = diff.reduce((sum, f) => sum + (f.added_lines || 0), 0);
   const deleted = diff.reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
   statusEl.className = 'status-badge warn';
-  statusEl.textContent = '⚠ 変更あり';
-  metaEl.textContent += `　変更量：+${added} / -${deleted}（直近セーブとの比較）`;
+  statusEl.innerHTML = '<span class="dot"></span>変更あり';
+  const metaRow = metaEl;
+  metaRow.innerHTML += `<span style="color:var(--warn-text);"><span class="added">+${added}</span> / <span class="deleted">-${deleted}</span>（直近セーブとの比較）</span>`;
   card.dataset.state = 'changed';
   return { state: 'changed' };
 }
 
 function wireCardActions(card, project) {
   const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
+  const diffLabelEl = card.querySelector('[data-role="diff-label"]');
   const detectBtn = card.querySelector('[data-role="detect"]');
+  const detectIconEl = card.querySelector('[data-role="detect-icon"]');
   const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
 
   diffToggleBtn.addEventListener('click', () => {
-    diffDetailEl.classList.toggle('open');
+    const open = diffDetailEl.classList.toggle('open');
+    diffLabelEl.textContent = open ? '差分を閉じる' : '差分を見る';
   });
 
   detectBtn.addEventListener('click', async () => {
     detectBtn.disabled = true;
-    detectBtn.textContent = '検知中...';
+    detectIconEl.classList.add('spin');
     try {
       const res = await apiFetch(`/api/projects/${project.id}/sync-check`, { method: 'POST' });
       const data = await res.json();
       if (!data.ok) {
-        alert('検知に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        showToast('検知に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
       } else if (data.change) {
-        alert('変更を検知し、変更履歴に記録しました。「セーブ画面へ」からセーブできます。');
+        showToast('変更を検知し、変更履歴に記録しました。「セーブ画面へ」からセーブできます。');
       } else {
-        alert('前回検知した内容から変わっていません。');
+        showToast('前回検知した内容から変わっていません。');
       }
     } finally {
-      detectBtn.textContent = '変更を検知';
+      detectIconEl.classList.remove('spin');
       await refreshProjectState(card, project);
       updateSummaryFromCards();
     }
   });
 }
 
+const SUMMARY_DEFS = [
+  { key: null, label: 'GAS Projects', unit: 'Projects', dot: 'background:var(--muted2)', numColor: '' },
+  { key: 'changed', label: '変更あり', unit: 'Changed', dot: 'background:var(--warn-dark)', numColor: 'color:var(--warn-dark)' },
+  { key: 'unchanged', label: '変更なし', unit: 'In sync', dot: 'background:var(--accent)', numColor: 'color:var(--accent-dark)' },
+  { key: 'error', label: '認証エラー', unit: 'Auth errors', dot: 'background:var(--error)', numColor: 'color:var(--error)' },
+];
+
+function renderSummary(counts) {
+  summaryEl.innerHTML = SUMMARY_DEFS.map((def) => {
+    const value = def.key === null ? counts.all : counts[def.key];
+    const selected = currentFilter === def.key && def.key !== null ? 'selected' : '';
+    return `
+      <button type="button" class="card ${selected}" data-filter="${def.key ?? ''}" style="display:block;">
+        <div class="head"><span class="label">${def.label}</span><span class="dot" style="${def.dot}"></span></div>
+        <div class="num-row"><span class="num" style="${def.numColor}">${value}</span><span class="unit">${def.unit}</span></div>
+      </button>
+    `;
+  }).join('');
+  summaryEl.style.display = 'grid';
+  summaryEl.querySelectorAll('[data-filter]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.filter || null;
+      currentFilter = currentFilter === key ? null : key;
+      applyFilter();
+    });
+  });
+}
+
+function applyFilter() {
+  const cards = Array.from(listEl.querySelectorAll('.project-card'));
+  cards.forEach((card) => {
+    card.style.display = (!currentFilter || card.dataset.state === currentFilter) ? '' : 'none';
+  });
+  const chipEl = document.getElementById('filterChip');
+  const labelMap = { changed: '変更あり', unchanged: '変更なし', error: '認証エラー' };
+  if (currentFilter) {
+    chipEl.style.display = 'flex';
+    document.getElementById('filterLabel').textContent = '絞り込み：' + labelMap[currentFilter];
+  } else {
+    chipEl.style.display = 'none';
+  }
+  updateSummaryFromCards();
+}
+
+document.getElementById('clearFilterBtn').addEventListener('click', () => {
+  currentFilter = null;
+  applyFilter();
+});
+
 function updateSummaryFromCards() {
   const cards = Array.from(listEl.querySelectorAll('.project-card'));
   let changed = 0, unchanged = 0, error = 0;
   cards.forEach((card) => {
-    const badge = card.querySelector('[data-role="status"]');
-    if (badge.classList.contains('warn')) changed += 1;
-    else if (badge.classList.contains('ok')) unchanged += 1;
-    else if (badge.classList.contains('error')) error += 1;
+    if (card.dataset.state === 'changed') changed += 1;
+    else if (card.dataset.state === 'unchanged') unchanged += 1;
+    else if (card.dataset.state === 'error') error += 1;
   });
-  document.getElementById('sumTotal').textContent = cards.length;
-  document.getElementById('sumChanged').textContent = changed;
-  document.getElementById('sumUnchanged').textContent = unchanged;
-  document.getElementById('sumError').textContent = error;
-  summaryEl.style.display = 'grid';
+  document.getElementById('projectCountText').textContent = `${cards.length}件登録済み`;
+  document.getElementById('authErrorBanner').style.display = error > 0 ? 'flex' : 'none';
+  document.getElementById('authErrorCount').textContent = error;
+  renderSummary({ all: cards.length, changed, unchanged, error });
 }
 
 function renderChangeItem(change) {
@@ -427,18 +571,20 @@ function renderChangeItem(change) {
   const addedTotal = (change.diff || []).reduce((sum, f) => sum + (f.added_lines || 0), 0);
   const deletedTotal = (change.diff || []).reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
   const item = document.createElement('div');
-  item.className = 'release-item';
+  item.className = 'unsaved-item';
   item.dataset.changeId = change.id;
   item.innerHTML = `
-    <div class="row1">
-      <div>
-        <div class="project-name">${escapeHtml(projectName)}　<span class="status-badge warn" style="font-size:11px;">未セーブ</span></div>
-        <div class="meta">検知日時：${formatDate(change.detected_at)}　変更量：+${addedTotal} / -${deletedTotal}</div>
+    <div style="min-width:0;flex:1;">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;">
+        <span class="badge-pill">未セーブ</span>
+        <span class="project-name">${escapeHtml(projectName)}</span>
       </div>
+      <div class="meta">検知 ${formatDate(change.detected_at)}・<span class="added">+${addedTotal}</span> / <span class="deleted">-${deletedTotal}</span> 行</div>
     </div>
-    <div class="actions">
-      <a href="/releases#new/${change.project_id}" class="primary">セーブ画面へ →</a>
-    </div>
+    <a href="/releases#new/${change.project_id}" class="primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>
+      セーブ画面へ
+    </a>
   `;
   return item;
 }
@@ -453,13 +599,14 @@ async function refreshReleasePanel() {
     changes = [];
   }
   changes.sort((a, b) => (b.detected_at || '').localeCompare(a.detected_at || ''));
+  document.getElementById('unsavedCount').textContent = changes.length;
 
   releaseListEl.innerHTML = '';
   if (!changes.length) {
     releasePanelEl.style.display = 'block';
     const empty = document.createElement('div');
-    empty.className = 'release-empty';
-    empty.textContent = '未セーブの変更はありません。';
+    empty.className = 'empty-dashed';
+    empty.textContent = '未セーブの変更はありません。すべての変更がセーブポイントに記録されています。';
     releaseListEl.appendChild(empty);
     return;
   }
@@ -474,11 +621,11 @@ async function loadDashboard() {
   const status = await statusRes.json();
 
   if (!status.connected) {
-    connectBannerEl.style.display = 'block';
+    connectBannerEl.style.display = 'flex';
     loadingEl.style.display = 'none';
     return;
   }
-  accountInfoEl.textContent = status.email ? `接続中: ${status.email}` : '';
+  accountInfoEl.textContent = status.email || '';
   window.__savepointUser = status.email || 'unknown';
   if (status.dev_mode && status.email) {
     authHeaders = { 'X-Debug-User-Email': status.email };
@@ -503,7 +650,7 @@ async function loadDashboard() {
 
   if (!projects.length) {
     emptyEl.style.display = 'block';
-    summaryEl.style.display = 'grid';
+    renderSummary({ all: 0, changed: 0, unchanged: 0, error: 0 });
     return;
   }
 
@@ -516,8 +663,7 @@ async function loadDashboard() {
     return { card, project };
   });
 
-  summaryEl.style.display = 'grid';
-  document.getElementById('sumTotal').textContent = projects.length;
+  renderSummary({ all: projects.length, changed: 0, unchanged: 0, error: 0 });
 
   await Promise.all([
     Promise.all(cards.map(({ card, project }) => refreshProjectState(card, project))),
