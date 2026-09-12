@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SavePoint ユーザー管理</title>
+<style>
+  :root {
+    color-scheme: light;
+    --sidebar-bg: #14161b;
+    --sidebar-text: #d6d8dc;
+    --sidebar-muted: #8b9099;
+    --sidebar-active-bg: #23262d;
+    --bg: #f7f8fa;
+    --card-bg: #ffffff;
+    --border: #e3e5e9;
+    --text: #16181d;
+    --muted: #767c86;
+    --error: #c0392b;
+    --accent: #23b26d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 24px 16px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 6px;
+  }
+  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
+  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
+  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
+  h1.page-title { font-size: 20px; margin: 0 0 6px; }
+  main { max-width: 800px; margin: 0 auto; padding: 32px 24px; }
+  .page-desc { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  .readme-muted { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  th { background: #f0f2f5; font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  select {
+    font-size: 13px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: #fff;
+  }
+  button {
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f2f5; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--error); border-color: var(--error); }
+  .add-user {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .add-user input {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+  .error-message { color: var(--error); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">SavePoint</div>
+    <nav>
+      <a href="/">ダッシュボード</a>
+      <a href="/ledger">台帳</a>
+      <a href="/releases">セーブ管理</a>
+      <a href="/changes">変更履歴</a>
+      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+      <a href="/users" class="active" id="usersLink" hidden>ユーザー管理</a>
+    </nav>
+    <div class="account-info" id="accountInfo"></div>
+  </aside>
+  <div class="main-content">
+  <main>
+    <h1 class="page-title">ユーザー管理</h1>
+    <p class="page-desc">このシステムを使えるユーザーとグローバルロールを管理します（プロジェクトごとの権限は台帳画面のメンバー管理で個別に上書きできます）。所有者＝すべて操作可／保守担当＝所有者に近いがメンバー管理は不可／開発者＝編集可／閲覧者＝見るだけ。</p>
+    <div id="loadingText" class="loading-text">読み込み中...</div>
+    <div id="errorText" class="error-message" style="display:none;"></div>
+    <div id="content" style="display:none;">
+      <div class="add-user">
+        <input type="text" id="newUserEmail" placeholder="メールアドレス">
+        <select id="newUserRole">
+          <option value="viewer">閲覧者</option>
+          <option value="developer">開発者</option>
+          <option value="maintainer">保守担当</option>
+          <option value="owner">所有者</option>
+        </select>
+        <button type="button" class="primary" id="addUserBtn">追加</button>
+      </div>
+      <table>
+        <thead><tr><th>メールアドレス</th><th>ロール</th><th></th></tr></thead>
+        <tbody id="userBody"></tbody>
+      </table>
+    </div>
+  </main>
+  </div>
+</div>
+
+<script>
+const ROLE_LABELS = { owner: '所有者', maintainer: '保守担当', developer: '開発者', viewer: '閲覧者' };
+let authHeaders = {};
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders };
+  return fetch(url, { ...options, headers });
+}
+
+function renderUsers(users) {
+  const bodyEl = document.getElementById('userBody');
+  bodyEl.innerHTML = users.map((u) => `
+    <tr data-email="${escapeHtml(u.email)}">
+      <td>${escapeHtml(u.email)}</td>
+      <td>${ROLE_LABELS[u.role] || escapeHtml(u.role)}</td>
+      <td><button type="button" class="danger" data-role="delete-user">削除</button></td>
+    </tr>
+  `).join('');
+}
+
+async function loadUsers() {
+  const res = await apiFetch('/api/users');
+  if (!res.ok) throw new Error('ユーザー一覧の取得に失敗しました');
+  const users = await res.json();
+  renderUsers(users);
+}
+
+async function init() {
+  const loadingEl = document.getElementById('loadingText');
+  const errorEl = document.getElementById('errorText');
+  const contentEl = document.getElementById('content');
+
+  try {
+    const statusRes = await fetch('/api/oauth/status');
+    const status = await statusRes.json();
+    if (status.dev_mode && status.email) {
+      authHeaders = { 'X-Debug-User-Email': status.email };
+    }
+    document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
+  } catch (e) {
+    // dev_mode判定に失敗しても本番(IAP)では影響ないため無視する
+  }
+
+  try {
+    const meRes = await apiFetch('/api/me');
+    const me = await meRes.json();
+    if (me.role === 'owner') {
+      document.getElementById('auditLogLink').hidden = false;
+      document.getElementById('usersLink').hidden = false;
+    }
+  } catch (e) {
+    // 権限判定に失敗した場合はAPI側の403で最終防御される
+  }
+
+  try {
+    await loadUsers();
+    loadingEl.style.display = 'none';
+    contentEl.style.display = 'block';
+  } catch (e) {
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    errorEl.textContent = 'ユーザー管理にはOwner権限が必要です。';
+    return;
+  }
+
+  document.getElementById('userBody').addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-role="delete-user"]');
+    if (!btn) return;
+    const email = btn.closest('tr').dataset.email;
+    if (!window.confirm(`${email} を削除しますか？（このユーザーは以後ログインできなくなります）`)) return;
+    const res = await apiFetch(`/api/users/${encodeURIComponent(email)}`, { method: 'DELETE' });
+    if (!res.ok) {
+      alert('削除に失敗しました。');
+      return;
+    }
+    await loadUsers();
+  });
+
+  document.getElementById('addUserBtn').addEventListener('click', async () => {
+    const emailInput = document.getElementById('newUserEmail');
+    const roleSelect = document.getElementById('newUserRole');
+    const email = emailInput.value.trim();
+    if (!email) {
+      alert('メールアドレスを入力してください。');
+      return;
+    }
+    const btn = document.getElementById('addUserBtn');
+    btn.disabled = true;
+    try {
+      const res = await apiFetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role: roleSelect.value }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        alert('追加に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        return;
+      }
+      emailInput.value = '';
+      await loadUsers();
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+init();
+</script>
+</body>
+</html>

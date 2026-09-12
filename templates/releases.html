@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SavePoint リリース管理</title>
+<title>SavePoint セーブ管理</title>
 <style>
   :root {
     color-scheme: light;
@@ -126,8 +126,10 @@
     <nav>
       <a href="/">ダッシュボード</a>
       <a href="/ledger">台帳</a>
-      <a href="/releases" class="active">リリース管理</a>
+      <a href="/releases" class="active">セーブ管理</a>
+      <a href="/changes">変更履歴</a>
       <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
     </nav>
     <div class="account-info" id="accountInfo"></div>
   </aside>
@@ -159,12 +161,6 @@ function formatDate(iso) {
 async function apiFetch(url, options = {}) {
   const headers = { ...(options.headers || {}), ...authHeaders };
   return fetch(url, { ...options, headers });
-}
-
-const STATUS_LABELS = { pending: '承認待ち', approved: '承認済み', rejected: '却下' };
-
-function statusBadge(status) {
-  return `<span class="status-badge status-${status}">${STATUS_LABELS[status] || status}</span>`;
 }
 
 function diffSummary(diff) {
@@ -222,12 +218,12 @@ async function renderSelectView(root) {
   projectsCache = projects;
 
   if (!projects.length) {
-    root.innerHTML = '<h1 class="page-title">リリース管理</h1><div class="empty">登録済みのGASプロジェクトがありません。まず台帳から登録してください。</div>';
+    root.innerHTML = '<h1 class="page-title">セーブ管理</h1><div class="empty">登録済みのGASプロジェクトがありません。まず台帳から登録してください。</div>';
     return;
   }
 
   root.innerHTML = `
-    <h1 class="page-title">リリース管理</h1>
+    <h1 class="page-title">セーブ管理</h1>
     <div class="meta-line">対象のGASプロジェクトを選択してください。</div>
     ${projects.map((p) => `
       <div class="card project-pick-row" data-project-id="${p.id}">
@@ -236,8 +232,8 @@ async function renderSelectView(root) {
           <div class="script-id">${escapeHtml(p.script_id)}</div>
         </div>
         <div class="actions">
-          <button type="button" class="primary" data-role="go-new">新規リリース作成</button>
-          <button type="button" data-role="go-list">リリース一覧</button>
+          <button type="button" class="primary" data-role="go-new">新規セーブ</button>
+          <button type="button" data-role="go-list">セーブポイント一覧</button>
         </div>
       </div>
     `).join('')}
@@ -250,49 +246,66 @@ async function renderSelectView(root) {
   });
 }
 
-// 2. 新規リリース作成画面（未リリース変更の自動検出付き）
+// 2. 新規セーブ画面（未セーブのchangesが全件承認済みであることを確認してから作成）
 async function renderNewReleaseView(root, projectId) {
   const project = projectsCache.find((p) => p.id === projectId) || (await (await apiFetch(`/api/projects/${projectId}`)).json());
 
   root.innerHTML = `
     <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
-    <h1 class="page-title">新規リリース作成</h1>
+    <h1 class="page-title">新規セーブ</h1>
     <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
-    <div class="meta-line" style="margin-bottom:14px;">今のGASの変更内容を他の人に確認してもらい、承認を得てから正式な履歴に記録したいときに使います。すぐ自分だけで保存したい場合はダッシュボードの「セーブポイント」をお使いください。</div>
-    <div class="card" id="diffCard"><div class="loading-text">未リリースの変更を確認中...</div></div>
+    <div class="meta-line" style="margin-bottom:14px;">未セーブの変更をレビュー・承認画面（変更履歴）で全件承認すると、ここからまとめてセーブポイントとして記録できます。GASの保存内容自体は編集した時点で既に反映されているため、これは事前ブロックではなく事後の正式記録です。</div>
+    <div class="card" id="changesCard"><div class="loading-text">未セーブの変更を確認中...</div></div>
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate('select'));
 
-  const diffCard = document.getElementById('diffCard');
-  const fetchRes = await apiFetch(`/api/projects/${projectId}/fetch`, { method: 'POST' });
-  const fetchData = await fetchRes.json();
+  const changesCard = document.getElementById('changesCard');
+  const res = await apiFetch(`/api/projects/${projectId}/changes`);
+  const allChanges = await res.json();
+  const unreleased = allChanges.filter((c) => c.display_status !== 'released');
 
-  if (!fetchData.ok) {
-    diffCard.innerHTML = `<div class="error-message">最新コードの取得に失敗しました: ${escapeHtml(fetchData.error ? fetchData.error.message : '不明なエラー')}</div>`;
+  if (!unreleased.length) {
+    changesCard.innerHTML = `
+      <div class="empty">未セーブの変更はありません。</div>
+      <div class="actions" style="margin-top:10px;">
+        <button type="button" id="detectBtn">今すぐ変更を検知する</button>
+      </div>
+    `;
+    document.getElementById('detectBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('detectBtn');
+      btn.disabled = true;
+      btn.textContent = '検知中...';
+      const detectRes = await apiFetch(`/api/projects/${projectId}/sync-check`, { method: 'POST' });
+      const detectData = await detectRes.json();
+      if (!detectData.ok) {
+        alert('検知に失敗しました: ' + (detectData.error ? detectData.error.message : '不明なエラー'));
+      }
+      await renderNewReleaseView(root, projectId);
+    });
     return;
   }
 
-  if (!fetchData.diff.length) {
-    diffCard.innerHTML = '<div class="empty">未リリースの変更はありません。GASを編集してから再度お試しください。</div>';
-    return;
-  }
+  const blocked = unreleased.filter((c) => c.approval_status !== 'approved');
+  const totalAdded = unreleased.reduce((sum, c) => sum + (c.diff || []).reduce((s, f) => s + (f.added_lines || 0), 0), 0);
+  const totalDeleted = unreleased.reduce((sum, c) => sum + (c.diff || []).reduce((s, f) => s + (f.deleted_lines || 0), 0), 0);
 
-  diffCard.innerHTML = `
-    <div class="meta-line">未リリースの変更（${diffSummary(fetchData.diff)}）</div>
-    ${diffTable(fetchData.diff)}
+  changesCard.innerHTML = `
+    <div class="meta-line">未セーブの変更：${unreleased.length}件（<span class="added">+${totalAdded}</span> / <span class="deleted">-${totalDeleted}</span>）</div>
+    ${blocked.length ? `<div class="error-message">未承認の変更が${blocked.length}件残っています。<a href="/changes#${projectId}">変更履歴でレビュー・承認</a>してからセーブしてください。</div>` : '<div class="meta-line" style="color: var(--ok);">すべての変更が承認済みです。セーブできます。</div>'}
     <div style="margin-top:14px;">
-      <label class="meta-line" for="releaseComment">申請コメント（省略可）</label>
-      <textarea id="releaseComment" placeholder="この変更の内容・理由を記入してください"></textarea>
+      <label class="meta-line" for="releaseComment">セーブコメント（省略可）</label>
+      <textarea id="releaseComment" placeholder="このセーブの内容・理由を記入してください"></textarea>
     </div>
     <div class="actions" style="margin-top:10px;">
-      <button type="button" class="primary" id="submitReleaseBtn" ${canEdit() ? '' : 'disabled title="リリース申請にはDeveloper以上の権限が必要です"'}>リリースを申請する</button>
+      <button type="button" class="primary" id="submitReleaseBtn" ${(canEdit() && !blocked.length) ? '' : 'disabled'}>セーブする</button>
     </div>
   `;
 
-  document.getElementById('submitReleaseBtn').addEventListener('click', async () => {
-    const btn = document.getElementById('submitReleaseBtn');
-    btn.disabled = true;
-    btn.textContent = '申請中...';
+  const submitBtn = document.getElementById('submitReleaseBtn');
+  if (!canEdit()) submitBtn.title = 'セーブにはMaintainer以上の権限が必要です';
+  submitBtn.addEventListener('click', async () => {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '作成中...';
     try {
       const res = await apiFetch(`/api/projects/${projectId}/releases`, {
         method: 'POST',
@@ -301,21 +314,21 @@ async function renderNewReleaseView(root, projectId) {
       });
       const data = await res.json();
       if (!data.ok) {
-        alert('申請に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
-        btn.disabled = false;
-        btn.textContent = 'リリースを申請する';
+        alert('セーブに失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'セーブする';
         return;
       }
       navigate(`summary/${data.release.id}`);
     } catch (e) {
-      alert('申請に失敗しました: ' + e.message);
-      btn.disabled = false;
-      btn.textContent = 'リリースを申請する';
+      alert('セーブに失敗しました: ' + e.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'セーブする';
     }
   });
 }
 
-// 3. リリース一覧画面
+// 3. セーブポイント一覧画面
 async function renderListView(root, projectId) {
   const project = projectsCache.find((p) => p.id === projectId) || (await (await apiFetch(`/api/projects/${projectId}`)).json());
   const res = await apiFetch(`/api/projects/${projectId}/releases`);
@@ -323,16 +336,16 @@ async function renderListView(root, projectId) {
 
   root.innerHTML = `
     <div class="breadcrumb"><a data-role="back">← プロジェクト選択</a></div>
-    <h1 class="page-title">リリース一覧</h1>
+    <h1 class="page-title">セーブポイント一覧</h1>
     <div class="meta-line">${escapeHtml(project.project_name)}（${escapeHtml(project.script_id)}）</div>
     <div class="actions" style="margin-bottom:14px;">
-      <button type="button" class="primary" data-role="go-new">+ 新規リリース作成</button>
+      <button type="button" class="primary" data-role="go-new">+ 新規セーブ</button>
     </div>
-    ${!releases.length ? '<div class="empty">リリース申請はまだありません。</div>' : releases.map((r) => `
+    ${!releases.length ? '<div class="empty">セーブポイントはまだありません。</div>' : releases.map((r) => `
       <div class="card release-row" data-release-id="${r.id}">
         <div>
-          ${statusBadge(r.status)}
-          <div class="meta-line">申請者: ${escapeHtml(r.requested_by)} / 申請日時: ${formatDate(r.requested_at)} / 変更量: ${diffSummary(r.diff)}</div>
+          <span class="status-badge status-approved">セーブポイント v${r.resulting_version_no}</span>
+          <div class="meta-line">作成者: ${escapeHtml(r.requested_by)} / 作成日時: ${formatDate(r.created_at)} / 変更件数: ${r.change_count}件</div>
           ${r.comment ? `<div class="meta-line">コメント: ${escapeHtml(r.comment)}</div>` : ''}
         </div>
         <div class="actions"><button type="button" data-role="go-detail">詳細を見る</button></div>
@@ -346,7 +359,7 @@ async function renderListView(root, projectId) {
   });
 }
 
-// 4. リリース詳細画面
+// 4. セーブポイント詳細画面（セーブは作成時点で確定するため、この画面は情報表示専用）
 async function renderDetailView(root, releaseId) {
   const res = await apiFetch(`/api/releases/${releaseId}`);
   if (res.status === 401 || res.status === 403) {
@@ -354,87 +367,49 @@ async function renderDetailView(root, releaseId) {
     return;
   }
   if (res.status === 404) {
-    root.innerHTML = '<div class="error-message">リリース申請が見つかりません。</div>';
+    root.innerHTML = '<div class="error-message">セーブポイントが見つかりません。</div>';
     return;
   }
   const release = await res.json();
 
+  const changesRes = await apiFetch(`/api/projects/${release.project_id}/changes`);
+  const allChanges = await changesRes.json();
+  const includedChanges = allChanges.filter((c) => (release.change_ids || []).includes(c.id));
+
   root.innerHTML = `
-    <div class="breadcrumb"><a data-role="back">← リリース一覧</a></div>
-    <h1 class="page-title">リリース詳細</h1>
+    <div class="breadcrumb"><a data-role="back">← セーブポイント一覧</a></div>
+    <h1 class="page-title">セーブポイント詳細</h1>
     <div class="card">
-      <div>${statusBadge(release.status)}</div>
-      <div class="meta-line">申請者: ${escapeHtml(release.requested_by)} / 申請日時: ${formatDate(release.requested_at)}</div>
-      ${release.approved_by ? `<div class="meta-line">承認者: ${escapeHtml(release.approved_by)} / 承認日時: ${formatDate(release.approved_at)} / 結果バージョン: v${release.resulting_version_no}</div>` : ''}
-      ${release.rejected_by ? `<div class="meta-line">却下者: ${escapeHtml(release.rejected_by)} / 却下日時: ${formatDate(release.rejected_at)}${release.rejected_reason ? ` / 理由: ${escapeHtml(release.rejected_reason)}` : ''}</div>` : ''}
-      ${release.comment ? `<div class="meta-line">申請コメント: ${escapeHtml(release.comment)}</div>` : ''}
-      <div class="meta-line">変更量: ${diffSummary(release.diff)}</div>
-      ${diffTable(release.diff)}
-      ${release.status === 'pending' ? `
-        <div class="actions" style="margin-top:14px;">
-          <button type="button" class="primary" data-role="approve" ${isOwner() ? '' : 'disabled title="承認にはOwner権限が必要です"'}>承認</button>
-          <button type="button" class="danger" data-role="reject" ${isOwner() ? '' : 'disabled title="却下にはOwner権限が必要です"'}>却下</button>
-        </div>
-      ` : ''}
+      <div><span class="status-badge status-approved">セーブポイント v${release.resulting_version_no}</span></div>
+      <div class="meta-line">作成者: ${escapeHtml(release.requested_by)} / 作成日時: ${formatDate(release.created_at)} / 変更件数: ${release.change_count}件</div>
+      ${release.comment ? `<div class="meta-line">コメント: ${escapeHtml(release.comment)}</div>` : ''}
     </div>
+    ${includedChanges.map((c) => `
+      <div class="card">
+        <div class="meta-line">検知日時: ${formatDate(c.detected_at)} / 承認者: ${escapeHtml(c.approved_by || '-')}</div>
+        ${diffTable(c.diff)}
+      </div>
+    `).join('')}
   `;
   root.querySelector('[data-role="back"]').addEventListener('click', () => navigate(`list/${release.project_id}`));
-
-  const approveBtn = root.querySelector('[data-role="approve"]');
-  if (approveBtn) {
-    approveBtn.addEventListener('click', async () => {
-      if (!window.confirm('このリリースを承認し、正式なバージョンとして記録します。よろしいですか？')) return;
-      const res = await apiFetch(`/api/releases/${releaseId}/approve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown' }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        alert('承認に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
-        return;
-      }
-      navigate(`summary/${releaseId}`);
-    });
-  }
-  const rejectBtn = root.querySelector('[data-role="reject"]');
-  if (rejectBtn) {
-    rejectBtn.addEventListener('click', async () => {
-      const reason = window.prompt('却下理由を入力してください（省略可）', '');
-      if (reason === null) return;
-      const res = await apiFetch(`/api/releases/${releaseId}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ performed_by: window.__savepointUser || 'unknown', reason }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        alert('却下に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
-        return;
-      }
-      navigate(`summary/${releaseId}`);
-    });
-  }
 }
 
-// 5. リリースサマリー画面
+// 5. セーブ完了画面
 async function renderSummaryView(root, releaseId) {
   const res = await apiFetch(`/api/releases/${releaseId}`);
   if (!res.ok) {
-    root.innerHTML = '<div class="error-message">リリース情報の取得に失敗しました。</div>';
+    root.innerHTML = '<div class="error-message">セーブポイント情報の取得に失敗しました。</div>';
     return;
   }
   const release = await res.json();
-  const statusText = { pending: '申請を送信しました。承認をお待ちください。', approved: '承認され、正式なバージョンとして記録されました。', rejected: '却下されました。' }[release.status] || '';
 
   root.innerHTML = `
     <div class="card summary-box">
-      <div class="big-status">${statusBadge(release.status)}</div>
-      <div class="meta-line">${statusText}</div>
-      ${release.resulting_version_no ? `<div class="meta-line">記録されたバージョン: v${release.resulting_version_no}</div>` : ''}
+      <div class="big-status"><span class="status-badge status-approved">セーブポイント v${release.resulting_version_no}</span></div>
+      <div class="meta-line">セーブポイントとして記録されました（${release.change_count}件の変更をまとめました）。</div>
       <div class="actions" style="justify-content:center; margin-top:16px;">
         <button type="button" data-role="go-detail">詳細を見る</button>
-        <button type="button" class="primary" data-role="go-list">リリース一覧へ戻る</button>
+        <button type="button" class="primary" data-role="go-list">セーブポイント一覧へ戻る</button>
       </div>
     </div>
   `;
@@ -443,10 +418,7 @@ async function renderSummaryView(root, releaseId) {
 }
 
 function canEdit() {
-  return currentUserRole === 'developer' || currentUserRole === 'maintainer' || currentUserRole === 'owner';
-}
-function isOwner() {
-  return currentUserRole === 'owner';
+  return currentUserRole === 'maintainer' || currentUserRole === 'owner';
 }
 
 async function init() {
@@ -467,6 +439,7 @@ async function init() {
   }
   if (currentUserRole === 'owner') {
     document.getElementById('auditLogLink').hidden = false;
+    document.getElementById('usersLink').hidden = false;
   }
 
   window.addEventListener('hashchange', renderCurrentView);

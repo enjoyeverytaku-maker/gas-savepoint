@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SavePoint 変更履歴</title>
+<style>
+  :root {
+    color-scheme: light;
+    --sidebar-bg: #14161b;
+    --sidebar-text: #d6d8dc;
+    --sidebar-muted: #8b9099;
+    --sidebar-active-bg: #23262d;
+    --bg: #f7f8fa;
+    --card-bg: #ffffff;
+    --border: #e3e5e9;
+    --text: #16181d;
+    --muted: #767c86;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --error: #c0392b;
+    --accent: #23b26d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; }
+  body {
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    padding: 24px 16px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar .brand { font-size: 16px; font-weight: 700; color: #fff; padding: 0 8px 24px; }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 6px;
+  }
+  .sidebar nav a:hover { background: var(--sidebar-active-bg); }
+  .sidebar nav a.active { background: var(--sidebar-active-bg); color: #fff; font-weight: 600; }
+  .sidebar .account-info { margin-top: auto; font-size: 12px; color: var(--sidebar-muted); padding: 8px; word-break: break-all; }
+  .main-content { margin-left: 220px; flex: 1; min-width: 0; }
+  h1.page-title { font-size: 20px; margin: 0 0 6px; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+  .page-desc { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  select {
+    font-size: 13px;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    min-width: 280px;
+  }
+  .filters { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
+  .filter {
+    font-size: 12px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: #fff;
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .filter.active { background: var(--text); color: #fff; border-color: var(--text); }
+  .timeline { display: flex; flex-direction: column; gap: 14px; }
+  .change-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .change-card .change-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+  .change-card .change-head-left { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .status-badge {
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 2px 9px;
+  }
+  .status-unreviewed { background: #eef2f6; color: var(--muted); }
+  .status-reviewed { background: #fff6dc; color: var(--warn); }
+  .status-changes_requested { background: #fde8e8; color: var(--error); }
+  .status-approved { background: #e6f6ee; color: var(--ok); }
+  .status-released { background: #e8f0fe; color: #1a56db; }
+  .change-card .meta { font-size: 12px; color: var(--muted); }
+  .change-card .comment { font-size: 13px; margin-top: 6px; color: var(--text); }
+  .change-card table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  .change-card th, .change-card td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  .change-card .added { color: var(--ok); }
+  .change-card .deleted { color: var(--error); }
+  .change-card .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button {
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #f0f2f5; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.danger { color: var(--error); border-color: var(--error); }
+  .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+  .error-message { color: var(--error); }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">SavePoint</div>
+    <nav>
+      <a href="/">ダッシュボード</a>
+      <a href="/ledger">台帳</a>
+      <a href="/releases">セーブ管理</a>
+      <a href="/changes" class="active">変更履歴</a>
+      <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
+    </nav>
+    <div class="account-info" id="accountInfo"></div>
+  </aside>
+  <div class="main-content">
+  <main>
+    <h1 class="page-title">変更履歴</h1>
+    <p class="page-desc">GASの変更は保存した瞬間に反映されます。ここでは、その変更を正式な記録として認めるかどうかをレビュー・承認します（承認済みの変更はセーブ管理画面でまとめてセーブポイントとして記録できます）。</p>
+    <select id="projectSelect"><option value="">すべてのプロジェクト</option></select>
+    <div class="filters" id="filters">
+      <button type="button" class="filter active" data-status="all">すべて (<span data-count="all">0</span>)</button>
+      <button type="button" class="filter" data-status="unreviewed">未レビュー (<span data-count="unreviewed">0</span>)</button>
+      <button type="button" class="filter" data-status="reviewed">レビュー済み (<span data-count="reviewed">0</span>)</button>
+      <button type="button" class="filter" data-status="changes_requested">要修正 (<span data-count="changes_requested">0</span>)</button>
+      <button type="button" class="filter" data-status="approved">承認済み (<span data-count="approved">0</span>)</button>
+      <button type="button" class="filter" data-status="released">セーブ済み (<span data-count="released">0</span>)</button>
+    </div>
+    <div id="loadingText" class="loading-text">読み込み中...</div>
+    <div id="errorText" class="error-message" style="display:none;"></div>
+    <div id="emptyText" class="empty" style="display:none;">該当する変更はありません。</div>
+    <div id="timeline" class="timeline"></div>
+  </main>
+  </div>
+</div>
+
+<script>
+const STATUS_LABELS = {
+  unreviewed: '未レビュー',
+  reviewed: 'レビュー済み（承認待ち）',
+  changes_requested: '要修正',
+  approved: '承認済み',
+  released: 'セーブ済み',
+};
+
+let authHeaders = {};
+let allChanges = [];
+let currentFilter = 'all';
+let currentProjectId = '';
+let currentRole = null;
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function formatDate(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}), ...authHeaders };
+  return fetch(url, { ...options, headers });
+}
+
+function renderDiffTable(diff) {
+  if (!diff || diff.length === 0) {
+    return '<div class="meta">最初の変更です（比較対象なし）。</div>';
+  }
+  const rows = diff.map((f) => `
+    <tr>
+      <td>${escapeHtml(f.name)}</td>
+      <td>${escapeHtml(f.status)}</td>
+      <td class="added">+${f.added_lines}</td>
+      <td class="deleted">-${f.deleted_lines}</td>
+    </tr>
+  `).join('');
+  return `<table><thead><tr><th>ファイル</th><th>状態</th><th>追加</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderActions(change) {
+  const status = change.display_status;
+  if (status === 'released') return '';
+  const parts = [];
+  if (status === 'unreviewed' || status === 'changes_requested') {
+    parts.push(`<button type="button" data-action="review" data-decision="reviewed" data-id="${change.id}">レビュー済みにする</button>`);
+    parts.push(`<button type="button" class="danger" data-action="review" data-decision="changes_requested" data-id="${change.id}">要修正にする</button>`);
+  }
+  if (status === 'reviewed') {
+    parts.push(`<button type="button" class="primary" data-action="approve" data-id="${change.id}">承認する</button>`);
+    parts.push(`<button type="button" class="danger" data-action="review" data-decision="changes_requested" data-id="${change.id}">要修正に戻す</button>`);
+  }
+  return parts.length ? `<div class="actions">${parts.join('')}</div>` : '';
+}
+
+function renderChangeCard(change) {
+  const div = document.createElement('div');
+  div.className = 'change-card';
+  div.dataset.changeId = change.id;
+  const project = projectNameMap[change.project_id] || change.project_id;
+  div.innerHTML = `
+    <div class="change-head">
+      <div class="change-head-left">
+        <strong>${escapeHtml(project)}</strong>
+        <span class="status-badge status-${change.display_status}">${STATUS_LABELS[change.display_status] || change.display_status}</span>
+        <span class="meta">検知：${formatDate(change.detected_at)}</span>
+      </div>
+    </div>
+    ${change.review_comment ? `<div class="comment">レビューコメント：${escapeHtml(change.review_comment)}</div>` : ''}
+    ${change.approval_comment ? `<div class="comment">承認コメント：${escapeHtml(change.approval_comment)}</div>` : ''}
+    ${renderDiffTable(change.diff)}
+    ${renderActions(change)}
+  `;
+  return div;
+}
+
+function applyFilterAndRender() {
+  const loadingEl = document.getElementById('loadingText');
+  const emptyEl = document.getElementById('emptyText');
+  const timelineEl = document.getElementById('timeline');
+  loadingEl.style.display = 'none';
+
+  let filtered = allChanges;
+  if (currentProjectId) filtered = filtered.filter((c) => c.project_id === currentProjectId);
+  if (currentFilter !== 'all') filtered = filtered.filter((c) => c.display_status === currentFilter);
+
+  timelineEl.innerHTML = '';
+  if (!filtered.length) {
+    emptyEl.style.display = 'block';
+    return;
+  }
+  emptyEl.style.display = 'none';
+  filtered.forEach((change) => timelineEl.appendChild(renderChangeCard(change)));
+
+  const counts = { all: allChanges.length, unreviewed: 0, reviewed: 0, changes_requested: 0, approved: 0, released: 0 };
+  const scoped = currentProjectId ? allChanges.filter((c) => c.project_id === currentProjectId) : allChanges;
+  counts.all = scoped.length;
+  scoped.forEach((c) => { if (counts[c.display_status] !== undefined) counts[c.display_status] += 1; });
+  Object.keys(counts).forEach((key) => {
+    const el = document.querySelector(`[data-count="${key}"]`);
+    if (el) el.textContent = counts[key];
+  });
+}
+
+async function loadChanges() {
+  const errorEl = document.getElementById('errorText');
+  errorEl.style.display = 'none';
+  const url = currentProjectId ? `/api/projects/${currentProjectId}/changes` : '/api/changes';
+  const res = await apiFetch(url, { headers: authHeaders });
+  if (res.status === 401 || res.status === 403) {
+    errorEl.style.display = 'block';
+    errorEl.textContent = 'この操作には閲覧権限が必要です。';
+    return;
+  }
+  if (!res.ok) {
+    errorEl.style.display = 'block';
+    errorEl.textContent = '変更一覧の取得に失敗しました。';
+    return;
+  }
+  allChanges = await res.json();
+  applyFilterAndRender();
+}
+
+let projectNameMap = {};
+
+async function performAction(button) {
+  const changeId = button.dataset.id;
+  const action = button.dataset.action;
+  const comment = window.prompt('コメント（省略可）', '') || '';
+  const performed_by = window.__savepointUser || 'unknown';
+  let url, body;
+  if (action === 'review') {
+    url = `/api/changes/${changeId}/review`;
+    body = { decision: button.dataset.decision, comment, performed_by };
+  } else {
+    url = `/api/changes/${changeId}/approve`;
+    body = { comment, performed_by };
+  }
+  const res = await apiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!data.ok) {
+    alert('操作に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+    return;
+  }
+  await loadChanges();
+}
+
+async function init() {
+  try {
+    const statusRes = await fetch('/api/oauth/status');
+    const status = await statusRes.json();
+    if (status.dev_mode && status.email) {
+      authHeaders = { 'X-Debug-User-Email': status.email };
+    }
+    window.__savepointUser = status.email || 'unknown';
+    document.getElementById('accountInfo').textContent = status.email ? `接続中: ${status.email}` : '';
+  } catch (e) {
+    // dev_mode判定に失敗しても本番(IAP)では影響ないため無視する
+  }
+
+  try {
+    const meRes = await apiFetch('/api/me');
+    const me = await meRes.json();
+    currentRole = me.role || null;
+    if (currentRole === 'owner') {
+      document.getElementById('auditLogLink').hidden = false;
+      document.getElementById('usersLink').hidden = false;
+    }
+  } catch (e) {
+    currentRole = null;
+  }
+
+  const selectEl = document.getElementById('projectSelect');
+  try {
+    const res = await apiFetch('/api/projects', { headers: authHeaders });
+    const projects = await res.json();
+    projects.forEach((project) => {
+      projectNameMap[project.id] = project.project_name;
+      const opt = document.createElement('option');
+      opt.value = project.id;
+      opt.textContent = `${project.project_name}（${project.script_id}）`;
+      selectEl.appendChild(opt);
+    });
+  } catch (e) {
+    document.getElementById('errorText').style.display = 'block';
+    document.getElementById('errorText').textContent = 'プロジェクト一覧の取得に失敗しました: ' + e.message;
+  }
+
+  const hashProjectId = location.hash.replace('#', '');
+  if (hashProjectId) {
+    selectEl.value = hashProjectId;
+    currentProjectId = hashProjectId;
+  }
+
+  selectEl.addEventListener('change', () => {
+    currentProjectId = selectEl.value;
+    loadChanges();
+  });
+
+  document.getElementById('filters').addEventListener('click', (event) => {
+    const btn = event.target.closest('.filter');
+    if (!btn) return;
+    document.querySelectorAll('.filter').forEach((f) => f.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.status;
+    applyFilterAndRender();
+  });
+
+  document.getElementById('timeline').addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-action]');
+    if (!btn) return;
+    performAction(btn);
+  });
+
+  await loadChanges();
+}
+
+init();
+</script>
+</body>
+</html>

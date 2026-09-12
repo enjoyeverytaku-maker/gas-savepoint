@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from google.cloud import firestore
+from firestore_client import db
 
 COLLECTION = "operation_logs"
 
@@ -16,13 +17,9 @@ ACTION_SOURCE_FETCH = "SOURCE_FETCH"
 ACTION_ROLLBACK = "ROLLBACK"
 ACTION_VERSION_CREATE = "VERSION_CREATE"
 ACTION_RELEASE_REQUEST = "RELEASE_REQUEST"
-ACTION_RELEASE_APPROVE = "RELEASE_APPROVE"
-ACTION_RELEASE_REJECT = "RELEASE_REJECT"
-
-
-def db() -> firestore.Client:
-    """Firestoreクライアントを生成する。"""
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
+ACTION_CHANGE_DETECT = "CHANGE_DETECT"
+ACTION_CHANGE_REVIEW = "CHANGE_REVIEW"
+ACTION_CHANGE_APPROVE = "CHANGE_APPROVE"
 
 
 def log_operation(

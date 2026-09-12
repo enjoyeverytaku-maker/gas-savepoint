@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 from google.cloud import firestore
+from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 COLLECTION = "users"
@@ -30,11 +31,6 @@ DEV_HEADER = "X-Debug-User-Email"
 # 2026-09-12にこの4段階へ移行。旧admin→owner、旧editor→developerに相当）
 ROLE_RANK = {"viewer": 0, "developer": 1, "maintainer": 2, "owner": 3}
 VALID_ROLES = tuple(ROLE_RANK.keys())
-
-
-def db() -> firestore.Client:
-    """Firestoreクライアントを生成する。"""
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
 
 
 def get_current_user_email(request: Request) -> str | None:

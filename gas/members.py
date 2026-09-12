@@ -10,17 +10,13 @@ import os
 from typing import Any
 
 from google.cloud import firestore
+from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from auth.users import VALID_ROLES
 
 PROJECTS_COLLECTION = "gas_projects"
 MEMBERS_SUBCOLLECTION = "members"
-
-
-def db() -> firestore.Client:
-    """Firestoreクライアントを生成する。"""
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
 
 
 def _members_ref(project_id: str):

@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from google.cloud import firestore
+from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 from .audit import ACTION_VERSION_CREATE, log_operation
@@ -12,11 +13,6 @@ from .diff import calculate_source_hash
 
 
 COLLECTION = "versions"
-
-
-def db() -> firestore.Client:
-    """Firestoreクライアントを生成する。"""
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
 
 
 def create_savepoint(

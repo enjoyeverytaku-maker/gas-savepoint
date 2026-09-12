@@ -200,8 +200,10 @@
     <nav>
       <a href="/" class="active">ダッシュボード</a>
       <a href="/ledger">台帳</a>
-      <a href="/releases">リリース管理</a>
+      <a href="/releases">セーブ管理</a>
+      <a href="/changes">変更履歴</a>
       <a href="/audit-log" id="auditLogLink" hidden>監査ログ</a>
+      <a href="/users" id="usersLink" hidden>ユーザー管理</a>
     </nav>
     <div class="account-info" id="accountInfo"></div>
   </aside>
@@ -222,7 +224,7 @@
       </div>
 
       <div class="release-panel" id="releasePanel" style="display:none;">
-        <h2 class="section-title">承認待ちリリース</h2>
+        <h2 class="section-title">レビュー待ちの変更</h2>
         <div class="release-list" id="releaseList"></div>
       </div>
 
@@ -293,10 +295,10 @@ function renderCard(project) {
     <div class="error-message" data-role="error" style="display:none;"></div>
     <div class="actions">
       <button type="button" data-role="diff-toggle" disabled>差分を見る</button>
-      <button type="button" data-role="savepoint" disabled>セーブポイント</button>
-      <button type="button" data-role="release-request" disabled>リリース申請</button>
+      <button type="button" data-role="detect" disabled>変更を検知</button>
+      <a href="/changes#${project.id}" class="primary">変更一覧・レビューへ →</a>
     </div>
-    <div class="action-hint">セーブポイント＝今の状態をすぐ履歴に保存（自分だけで完結）／リリース申請＝他の人の承認を経てから正式な履歴にしたい場合</div>
+    <div class="action-hint">GASの保存内容は編集した瞬間に反映されます。ここでの操作は「その変更を正式な記録として認めるかどうか」を管理するものです。変更を検知＝今すぐチェックして変更履歴に記録（定期チェックを待たずに反映）／変更一覧・レビュー＝検知済みの変更をレビュー・承認し、セーブポイントとしてまとめる</div>
     <div class="diff-detail" data-role="diff-detail"></div>
   `;
   return card;
@@ -322,8 +324,7 @@ async function refreshProjectState(card, project) {
   const metaEl = card.querySelector('[data-role="meta"]');
   const errorEl = card.querySelector('[data-role="error"]');
   const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
-  const savepointBtn = card.querySelector('[data-role="savepoint"]');
-  const releaseBtn = card.querySelector('[data-role="release-request"]');
+  const detectBtn = card.querySelector('[data-role="detect"]');
   const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
 
   errorEl.style.display = 'none';
@@ -337,7 +338,7 @@ async function refreshProjectState(card, project) {
     savepoints = [];
   }
   const latest = savepoints[0];
-  metaEl.textContent = `最終保存：${formatDate(latest ? latest.created_at : null)}`;
+  metaEl.textContent = `最終セーブ：${formatDate(latest ? latest.created_at : null)}`;
 
   const fetchRes = await apiFetch(`/api/projects/${project.id}/fetch`, { method: 'POST' });
   const fetchData = await fetchRes.json();
@@ -348,21 +349,19 @@ async function refreshProjectState(card, project) {
     errorEl.style.display = 'block';
     errorEl.textContent = fetchData.error ? fetchData.error.message : '不明なエラーです';
     diffToggleBtn.disabled = true;
-    savepointBtn.disabled = true;
-    releaseBtn.disabled = true;
+    detectBtn.disabled = true;
     card.dataset.state = 'error';
     return { state: 'error' };
   }
 
   const diff = fetchData.diff || [];
   diffToggleBtn.disabled = false;
-  savepointBtn.disabled = !canEdit();
+  detectBtn.disabled = !canEdit();
   diffDetailEl.innerHTML = renderDiffTable(diff);
 
   if (diff.length === 0) {
     statusEl.className = 'status-badge ok';
     statusEl.textContent = '✓ 変更なし';
-    releaseBtn.disabled = true;
     card.dataset.state = 'unchanged';
     return { state: 'unchanged' };
   }
@@ -371,66 +370,37 @@ async function refreshProjectState(card, project) {
   const deleted = diff.reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
   statusEl.className = 'status-badge warn';
   statusEl.textContent = '⚠ 変更あり';
-  metaEl.textContent += `　変更量：+${added} / -${deleted}`;
-  releaseBtn.disabled = !canEdit();
+  metaEl.textContent += `　変更量：+${added} / -${deleted}（直近セーブとの比較）`;
   card.dataset.state = 'changed';
   return { state: 'changed' };
 }
 
 function wireCardActions(card, project) {
   const diffToggleBtn = card.querySelector('[data-role="diff-toggle"]');
-  const savepointBtn = card.querySelector('[data-role="savepoint"]');
-  const releaseBtn = card.querySelector('[data-role="release-request"]');
+  const detectBtn = card.querySelector('[data-role="detect"]');
   const diffDetailEl = card.querySelector('[data-role="diff-detail"]');
 
   diffToggleBtn.addEventListener('click', () => {
     diffDetailEl.classList.toggle('open');
   });
 
-  savepointBtn.addEventListener('click', async () => {
-    const comment = window.prompt('セーブポイントのコメントを入力してください（省略可）', '');
-    if (comment === null) return;
-    savepointBtn.disabled = true;
-    savepointBtn.textContent = '保存中...';
+  detectBtn.addEventListener('click', async () => {
+    detectBtn.disabled = true;
+    detectBtn.textContent = '検知中...';
     try {
-      const res = await apiFetch(`/api/projects/${project.id}/savepoints`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment, created_by: window.__savepointUser || 'unknown' }),
-      });
+      const res = await apiFetch(`/api/projects/${project.id}/sync-check`, { method: 'POST' });
       const data = await res.json();
       if (!data.ok) {
-        alert('セーブポイントの作成に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
-      }
-    } finally {
-      savepointBtn.textContent = 'セーブポイント';
-      await refreshProjectState(card, project);
-      updateSummaryFromCards();
-    }
-  });
-
-  releaseBtn.addEventListener('click', async () => {
-    const comment = window.prompt('リリース申請のコメントを入力してください（省略可）', '');
-    if (comment === null) return;
-    releaseBtn.disabled = true;
-    releaseBtn.textContent = '申請中...';
-    try {
-      const res = await apiFetch(`/api/projects/${project.id}/releases`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment, requested_by: window.__savepointUser || 'unknown' }),
-      });
-      const data = await res.json();
-      if (!data.ok) {
-        alert('リリース申請に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+        alert('検知に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'));
+      } else if (data.change) {
+        alert('変更を検知し、変更一覧に記録しました。「変更一覧・レビューへ」からレビューしてください。');
       } else {
-        alert('リリース申請を送信しました。承認をお待ちください。');
+        alert('前回検知した内容から変わっていません。');
       }
     } finally {
-      releaseBtn.textContent = 'リリース申請';
+      detectBtn.textContent = '変更を検知';
       await refreshProjectState(card, project);
       updateSummaryFromCards();
-      await refreshReleasePanel();
     }
   });
 }
@@ -451,66 +421,57 @@ function updateSummaryFromCards() {
   summaryEl.style.display = 'grid';
 }
 
-function renderReleaseItem(release) {
-  const project = projectsById[release.project_id];
-  const projectName = project ? project.project_name : release.project_id;
-  const addedTotal = (release.diff || []).reduce((sum, f) => sum + (f.added_lines || 0), 0);
-  const deletedTotal = (release.diff || []).reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
+const CHANGE_STATUS_LABELS = {
+  unreviewed: '未レビュー',
+  reviewed: 'レビュー済み（承認待ち）',
+  changes_requested: '要修正',
+};
+
+function renderChangeItem(change) {
+  const project = projectsById[change.project_id];
+  const projectName = project ? project.project_name : change.project_id;
+  const addedTotal = (change.diff || []).reduce((sum, f) => sum + (f.added_lines || 0), 0);
+  const deletedTotal = (change.diff || []).reduce((sum, f) => sum + (f.deleted_lines || 0), 0);
   const item = document.createElement('div');
   item.className = 'release-item';
-  item.dataset.releaseId = release.id;
-  item.dataset.projectId = release.project_id;
+  item.dataset.changeId = change.id;
   item.innerHTML = `
     <div class="row1">
       <div>
-        <div class="project-name">${escapeHtml(projectName)}</div>
-        <div class="meta">申請者：${escapeHtml(release.requested_by)}　申請日時：${formatDate(release.requested_at)}　変更量：+${addedTotal} / -${deletedTotal}</div>
+        <div class="project-name">${escapeHtml(projectName)}　<span class="status-badge warn" style="font-size:11px;">${CHANGE_STATUS_LABELS[change.display_status] || change.display_status}</span></div>
+        <div class="meta">検知日時：${formatDate(change.detected_at)}　変更量：+${addedTotal} / -${deletedTotal}</div>
       </div>
     </div>
-    ${release.comment ? `<div class="comment">コメント：${escapeHtml(release.comment)}</div>` : ''}
     <div class="actions">
-      <a href="/releases#detail/${release.id}" class="primary">確認して承認・却下する →</a>
+      <a href="/changes#${change.project_id}" class="primary">確認してレビューする →</a>
     </div>
   `;
   return item;
 }
 
-function wireReleaseItemActions(item, release) {
-  // 承認・却下の実操作はリリース管理画面（/releases）に一本化。
-  // ここは「何件承認待ちがあるか」の一覧表示に専念し、操作導線を分散させない。
-}
-
 async function refreshReleasePanel() {
-  const projects = Object.values(projectsById);
-  if (!projects.length) {
-    releasePanelEl.style.display = 'none';
-    return;
+  let changes = [];
+  try {
+    const res = await apiFetch('/api/changes');
+    const data = await res.json();
+    changes = Array.isArray(data) ? data.filter((c) => c.display_status !== 'approved' && c.display_status !== 'released') : [];
+  } catch (e) {
+    changes = [];
   }
-  const lists = await Promise.all(projects.map(async (project) => {
-    try {
-      const res = await apiFetch(`/api/projects/${project.id}/releases`);
-      const data = await res.json();
-      return Array.isArray(data) ? data.filter((r) => r.status === 'pending') : [];
-    } catch (e) {
-      return [];
-    }
-  }));
-  const pending = lists.flat().sort((a, b) => (b.requested_at || '').localeCompare(a.requested_at || ''));
+  changes.sort((a, b) => (b.detected_at || '').localeCompare(a.detected_at || ''));
 
   releaseListEl.innerHTML = '';
-  if (!pending.length) {
+  if (!changes.length) {
     releasePanelEl.style.display = 'block';
     const empty = document.createElement('div');
     empty.className = 'release-empty';
-    empty.textContent = '承認待ちのリリースはありません。';
+    empty.textContent = 'レビュー待ちの変更はありません。';
     releaseListEl.appendChild(empty);
     return;
   }
   releasePanelEl.style.display = 'block';
-  pending.forEach((release) => {
-    const item = renderReleaseItem(release);
-    releaseListEl.appendChild(item);
-    wireReleaseItemActions(item, release);
+  changes.forEach((change) => {
+    releaseListEl.appendChild(renderChangeItem(change));
   });
 }
 
@@ -538,6 +499,7 @@ async function loadDashboard() {
   }
   if (currentUserRole === 'owner') {
     document.getElementById('auditLogLink').hidden = false;
+    document.getElementById('usersLink').hidden = false;
   }
 
   const projectsRes = await apiFetch('/api/projects');

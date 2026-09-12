@@ -1,8 +1,10 @@
 """自動検知（F11、spec.md §5・§6）。
 
 Cloud Scheduler経由で定期実行され、登録済み全GASプロジェクトの変更有無を
-チェックし、結果をFirestoreのsync_statusコレクションへ保存する。
-ユーザーが手動で「最新コードを取得」しなくても変更を検知できるようにする。
+チェックする。パートナーズ版の実装を確認した結果、検知した変更は単なる
+フラグではなく`changes`コレクションへ永続化し、レビュー・承認・リリースの
+起点にしている（gas/changes.py参照）。フラグ（sync_status）は
+ダッシュボード表示用の軽量なキャッシュとして引き続き保持する。
 """
 from __future__ import annotations
 
@@ -11,23 +13,18 @@ from typing import Any
 
 from fastapi import HTTPException, Request
 from google.cloud import firestore
+from firestore_client import db
 
 from auth.oauth import get_credentials
 from auth.secrets import get_secret
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
-from .diff import calculate_diff
+from .changes import detect_change
 from .projects import list_projects
-from .savepoints import get_latest_savepoint
 
 SYNC_COLLECTION = "sync_status"
 SCHEDULER_TOKEN_SECRET_ID = "savepoint-scheduler-token"
 SCHEDULER_HEADER = "X-Scheduler-Token"
-
-
-def db() -> firestore.Client:
-    """Firestoreクライアントを生成する。"""
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
 
 
 def verify_scheduler_token(request: Request) -> None:
@@ -41,8 +38,16 @@ def verify_scheduler_token(request: Request) -> None:
         raise HTTPException(status_code=401, detail="scheduler token invalid")
 
 
+def check_project(project_id: str, script_id: str, creds: Any) -> dict[str, Any] | None:
+    """1プロジェクト分の変更検知を行い、差分があればchangeを作成する。"""
+    source_files = fetch_source_files(script_id, creds)
+    change = detect_change(project_id, source_files)
+    _write_status(project_id, has_changes=change is not None, changed_files=len(change["diff"]) if change else 0, error=None)
+    return change
+
+
 def check_all_projects() -> dict[str, Any]:
-    """登録済み全GASプロジェクトの変更有無をチェックし、結果を保存する。"""
+    """登録済み全GASプロジェクトの変更有無をチェックし、検知した変更を永続化する。"""
     projects = list_projects()
     creds = None
     checked = 0
@@ -53,14 +58,9 @@ def check_all_projects() -> dict[str, Any]:
         try:
             if creds is None:
                 creds = get_credentials()
-            source_files = fetch_source_files(project["script_id"], creds)
-            latest_savepoint = get_latest_savepoint(project["id"])
-            previous_files = latest_savepoint["source_files"] if latest_savepoint else []
-            diff = calculate_diff(source_files, previous_files)
-            has_changes = len(diff) > 0
-            _write_status(project["id"], has_changes=has_changes, changed_files=len(diff), error=None)
+            change = check_project(project["id"], project["script_id"], creds)
             checked += 1
-            if has_changes:
+            if change is not None:
                 changed += 1
         except AppsScriptAPIError as exc:
             _write_status(project["id"], has_changes=False, changed_files=0, error=exc.message)

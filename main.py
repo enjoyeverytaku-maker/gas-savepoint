@@ -71,6 +71,16 @@ def releases_page(request: Request):
     return templates.TemplateResponse(request, "releases.html")
 
 
+@app.get("/changes")
+def changes_page(request: Request):
+    """変更履歴専用画面（パートナーズ版changes_admin相当、T22）。
+
+    T10の監査ログ（誰が何を操作したか）とは別に、GASソースの差分そのものを
+    バージョン単位の時系列で確認する画面。権限はAPI側（require_project_role）で強制する。
+    """
+    return templates.TemplateResponse(request, "changes.html")
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}

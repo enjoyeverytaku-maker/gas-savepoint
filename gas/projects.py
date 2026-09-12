@@ -5,16 +5,12 @@ import os
 from typing import Any
 
 from google.cloud import firestore
+from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 
 COLLECTION = "gas_projects"
 DEFAULT_GOOGLE_ACCOUNT = "connected_google_account"
-
-
-def db() -> firestore.Client:
-    """Firestoreクライアントを生成する。"""
-    return firestore.Client(project=os.environ.get("GCP_PROJECT"))
 
 
 def create_project(data: dict[str, Any]) -> dict[str, Any]:
