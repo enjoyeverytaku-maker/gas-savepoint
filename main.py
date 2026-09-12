@@ -4,6 +4,7 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
@@ -40,6 +41,7 @@ _refuse_dev_mode_on_cloud_run()
 
 app = FastAPI(title="SavePoint")
 app.include_router(gas_router)
+app.mount("/static", StaticFiles(directory=str(Path(__file__).parent / "static")), name="static")
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 

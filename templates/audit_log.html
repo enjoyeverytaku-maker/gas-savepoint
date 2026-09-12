@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SavePoint 監査ログ</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -72,6 +73,9 @@
   .result-badge.success { background: var(--accent-bg); color: var(--accent-dark); }
   .result-badge.other { background: var(--error-bg); color: var(--error-dark); }
   .empty, .loading-text, .error-message { color: var(--muted); font-size: 14px; padding: 24px 0; text-align: center; }
+  .loading-text { display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .loading-text::before { content: ''; width: 13px; height: 13px; border-radius: 50%; border: 2px solid var(--divider); border-top-color: var(--accent); animation: spLoadSpin .7s linear infinite; }
+  @keyframes spLoadSpin { to { transform: rotate(360deg); } }
   .error-message { color: var(--error); }
 </style>
 </head>
@@ -79,7 +83,7 @@
 <div class="app">
   <aside class="sidebar">
     <a href="/" class="brand-row" style="text-decoration:none;color:inherit;">
-      <div class="brand-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0c1a13" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg></div>
+      <div class="brand-icon"><svg width="19" height="19" viewBox="0 0 24 24"><text x="12" y="18" text-anchor="middle" font-family="'IBM Plex Sans', Arial, sans-serif" font-weight="800" font-size="15" fill="#0c1a13">P</text></svg></div>
       <div><div class="brand-name">SavePoint</div><div class="brand-sub">GAS 変更管理</div></div>
     </a>
     <nav>
