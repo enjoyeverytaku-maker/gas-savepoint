@@ -42,6 +42,17 @@ PROJECT_ROLE_RANK = {"viewer": 0, "developer": 1, "maintainer": 2, "owner": 3}
 VALID_PROJECT_ROLES = tuple(PROJECT_ROLE_RANK.keys())
 
 
+def normalize_email(email: str) -> str:
+    """メールアドレスをFirestoreのドキュメントIDとして使うための正規化（前後空白除去＋小文字化）。
+
+    2026-09-15修正: 以前は正規化せずそのままドキュメントIDにしていたため、管理者が
+    「Taro.Yamada@mannen.jp」で登録したユーザーにIAPが「taro.yamada@mannen.jp」を渡すと
+    ロールが引けず、静かにmember扱い（＝権限なし）に落ちる不具合があった。Firestoreの
+    ドキュメントIDは大文字小文字を区別するため、読み書き両方でここを通す。
+    """
+    return (email or "").strip().lower()
+
+
 def get_current_user_email(request: Request) -> str | None:
     """リクエストから認証済みユーザーのメールアドレスを取得する（未認証ならNone）。
 
@@ -53,17 +64,17 @@ def get_current_user_email(request: Request) -> str | None:
     """
     iap_value = request.headers.get(IAP_HEADER)
     if iap_value:
-        return iap_value.split(":", 1)[-1]
+        return normalize_email(iap_value.split(":", 1)[-1])
     if os.environ.get("SAVEPOINT_DEV_MODE") == "1":
         debug_value = request.headers.get(DEV_HEADER) or request.query_params.get("debug_email")
         if debug_value:
-            return debug_value
+            return normalize_email(debug_value)
     return None
 
 
 def get_user_role(email: str) -> str:
     """指定ユーザーのグローバルロールを返す。usersコレクションが1件も無い間は誰でもadmin扱い（初回導入時のブートストラップ）。"""
-    snapshot = db().collection(COLLECTION).document(email).get()
+    snapshot = db().collection(COLLECTION).document(normalize_email(email)).get()
     if snapshot.exists:
         return (snapshot.to_dict() or {}).get("role", "member")
     if _is_bootstrap_state():
@@ -107,7 +118,12 @@ def get_project_role(project_id: str, email: str) -> str | None:
     if get_user_role(email) == "admin":
         return "owner"
     snapshot = (
-        db().collection("gas_projects").document(project_id).collection("members").document(email).get()
+        db()
+        .collection("gas_projects")
+        .document(project_id)
+        .collection("members")
+        .document(normalize_email(email))
+        .get()
     )
     if snapshot.exists:
         return (snapshot.to_dict() or {}).get("role", "viewer")
@@ -147,6 +163,9 @@ def upsert_user(email: str, role: str, updated_by: str) -> dict[str, Any]:
     """ユーザーのグローバルロール（admin/member）を登録・更新する。"""
     if role not in VALID_GLOBAL_ROLES:
         raise ValueError(f"invalid role: {role}")
+    email = normalize_email(email)
+    if not email:
+        raise ValueError("email is required")
     db().collection(COLLECTION).document(email).set(
         {"email": email, "role": role, "updated_by": updated_by, "updated_at": SERVER_TIMESTAMP},
         merge=True,
@@ -156,7 +175,7 @@ def upsert_user(email: str, role: str, updated_by: str) -> dict[str, Any]:
 
 def get_user(email: str) -> dict[str, Any] | None:
     """ユーザー1件を取得する。"""
-    snapshot = db().collection(COLLECTION).document(email).get()
+    snapshot = db().collection(COLLECTION).document(normalize_email(email)).get()
     if not snapshot.exists:
         return None
     data = snapshot.to_dict() or {}
@@ -176,7 +195,7 @@ def list_users() -> list[dict[str, Any]]:
 
 def delete_user(email: str) -> None:
     """ユーザーを削除する。"""
-    db().collection(COLLECTION).document(email).delete()
+    db().collection(COLLECTION).document(normalize_email(email)).delete()
 
 
 def _to_iso(value: Any) -> Any:

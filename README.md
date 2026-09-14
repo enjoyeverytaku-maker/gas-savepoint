@@ -39,6 +39,19 @@ echo -n "<クライアントシークレット>" | gcloud secrets create savepoi
    `GET /api/oauth/my-connection` で確認できる。`GET /api/oauth/status` は開発時のRBACユーザー切り替え
    専用に用途が分かれている、後述）
 
+## テスト
+
+外部サービス（Firestore・Google API）に接続しない純粋なロジック部分を自動テストで固定している。
+差分計算（`gas/diff.py`）と権限判定（`auth/users.py`）が対象。
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -q
+```
+
+Firestore・Apps Script APIを伴う経路（セーブポイント採番・ロールバック・変更検知）は、
+ローカル開発環境（`SAVEPOINT_DEV_MODE=1`）で実際のGCPプロジェクトに対して手動で確認する。
+
 ## 権限管理（RBAC、F6）
 
 SavePoint画面自体へのログイン認証は、本番ではCloud Run + IAP（Identity-Aware Proxy）が担う想定。

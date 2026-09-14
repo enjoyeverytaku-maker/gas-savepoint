@@ -615,10 +615,17 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     data.projects.forEach((item) => {
       const row = document.createElement('div');
       row.className = 'discovered-row';
+      // 他人が所有するGAS（自分に共有されているだけのもの）は、自分のアカウントで登録すると
+      // 後の変更検知・復元が権限不足で失敗しうるため、所有者を明示する（2026-09-15）。
+      const isOthers = item.owner_email && myConnection.email && item.owner_email !== myConnection.email;
+      const ownerNote = isOthers
+        ? `<div class="readme-muted" style="margin-top:2px;">所有者: ${escapeHtml(item.owner_email)}（自分以外のGASです。操作できない場合は所有者に共有設定を確認してください）</div>`
+        : '';
       row.innerHTML = `
         <div style="flex:1;min-width:0;">
           <div style="font-size:13.5px;font-weight:600;">${escapeHtml(item.project_name)}</div>
           <div class="script-id">${escapeHtml(item.script_id)}</div>
+          ${ownerNote}
         </div>
       `;
       const btn = document.createElement('button');

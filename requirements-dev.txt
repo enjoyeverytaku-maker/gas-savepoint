@@ -1,0 +1,4 @@
+# 開発・テスト専用の依存（Cloud Runのイメージには含めない）。
+# 本番の依存はrequirements.txt側。Dockerfileはrequirements.txtだけをインストールする。
+-r requirements.txt
+pytest>=8.0

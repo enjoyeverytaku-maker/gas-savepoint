@@ -563,7 +563,8 @@ async function renderNewReleaseView(root, projectId) {
       const res = await apiFetch(`/api/projects/${projectId}/releases`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ comment: document.getElementById('releaseComment').value, requested_by: window.__savepointUser || 'unknown' }),
+        // 実行者はサーバー側が認証情報（IAP）から決める。クライアントからは送らない（2026-09-15）。
+        body: JSON.stringify({ comment: document.getElementById('releaseComment').value }),
       });
       const data = await res.json();
       if (!data.ok) {
@@ -690,9 +691,9 @@ async function renderDetailView(root, releaseId) {
         const res = await apiFetch(`/api/projects/${release.project_id}/rollback`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          // 実行者はサーバー側が認証情報（IAP）から決める。クライアントからは送らない（2026-09-15）。
           body: JSON.stringify({
             target_version_no: release.resulting_version_no,
-            performed_by: window.__savepointUser || 'unknown',
             expected_current_hash: expectedHash,
           }),
         });

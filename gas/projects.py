@@ -48,13 +48,33 @@ def list_projects_for_user(email: str, is_admin: bool) -> list[dict[str, Any]]:
 
     admin は全件。member はgas_projects/{id}/membersに個別付与されたプロジェクトのみ
     （2026-09-12、GASごとに権限を付与する方式へ変更）。
+
+    2026-09-15最適化: 以前はプロジェクトごとにget_project_role()を呼び、その中で毎回
+    「そのユーザーがadminか」をusersコレクションへ問い合わせていたため、プロジェクト数Nに対し
+    2N回のFirestore往復が発生していた（呼び出し元は既にadminかどうかを知っているので重複判定）。
+    メンバー権限の有無はget_all()で1往復にまとめる。
     """
     projects = list_projects()
     if is_admin:
         return projects
-    from auth.users import get_project_role
 
-    return [p for p in projects if get_project_role(p["id"], email) is not None]
+    from auth.users import normalize_email
+
+    email = normalize_email(email)
+    if not email or not projects:
+        return []
+
+    client = db()
+    member_refs = [
+        client.collection(COLLECTION).document(project["id"]).collection("members").document(email)
+        for project in projects
+    ]
+    accessible_ids = {
+        snapshot.reference.parent.parent.id
+        for snapshot in client.get_all(member_refs)
+        if snapshot.exists
+    }
+    return [project for project in projects if project["id"] in accessible_ids]
 
 
 def get_project(project_id: str) -> dict[str, Any] | None:

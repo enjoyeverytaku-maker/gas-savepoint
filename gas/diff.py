@@ -28,8 +28,15 @@ def calculate_source_hash(source_files: list[dict[str, Any]]) -> str:
 def calculate_diff(
     current_files: list[dict[str, Any]],
     previous_files: list[dict[str, Any]] | None = None,
+    include_lines: bool = True,
 ) -> list[dict[str, Any]]:
-    """直前セーブポイントとの差分をファイル単位で計算する（行単位の差分付き）。"""
+    """直前セーブポイントとの差分をファイル単位で計算する。
+
+    include_lines=Falseにすると行単位の差分（lines）を省き、ファイル単位の集計だけを返す。
+    変更検知の記録（gas/changes.py）は画面側でファイル名と増減行数しか使わないうえ、
+    linesを持たせるとFirestoreの1ドキュメント上限（1MiB）をソース本文と二重に圧迫するため、
+    保存用途ではFalseを使う（2026-09-15）。
+    """
     previous_by_key = _index_files(previous_files or [])
     current_by_key = _index_files(current_files)
 
@@ -37,20 +44,29 @@ def calculate_diff(
     for key in sorted(current_by_key.keys() - previous_by_key.keys()):
         current = current_by_key[key]
         added = len(_split_lines(current.get("source", "")))
-        results.append(_diff_result(current, "Added", added, 0, "", current.get("source", "")))
+        results.append(_diff_result(current, "Added", added, 0, "", current.get("source", ""), include_lines))
 
     for key in sorted(previous_by_key.keys() & current_by_key.keys()):
         previous = previous_by_key[key]
         current = current_by_key[key]
         if previous.get("source", "") == current.get("source", ""):
             continue
-        added, deleted = _count_changed_lines(previous.get("source", ""), current.get("source", ""))
-        results.append(_diff_result(current, "Modified", added, deleted, previous.get("source", ""), current.get("source", "")))
+        results.append(
+            _diff_result(
+                current,
+                "Modified",
+                None,
+                None,
+                previous.get("source", ""),
+                current.get("source", ""),
+                include_lines,
+            )
+        )
 
     for key in sorted(previous_by_key.keys() - current_by_key.keys()):
         previous = previous_by_key[key]
         deleted = len(_split_lines(previous.get("source", "")))
-        results.append(_diff_result(previous, "Deleted", 0, deleted, previous.get("source", ""), ""))
+        results.append(_diff_result(previous, "Deleted", 0, deleted, previous.get("source", ""), "", include_lines))
 
     return results
 
@@ -69,14 +85,28 @@ def _split_lines(source: str) -> list[str]:
 
 
 def _count_changed_lines(previous_source: str, current_source: str) -> tuple[int, int]:
-    """difflibで追加行数と削除行数を簡易集計する。"""
+    """追加行数と削除行数を集計する。
+
+    2026-09-15変更: 以前はdifflib.ndiffを使っていたが、ndiffは行内の類似度まで見る分
+    計算量が大きく（最悪O(n^2)）、しかも画面表示用のunified_diffと二重に差分計算していた。
+    表示用と同じSequenceMatcherの操作列から数えることで、計算を1回に減らしつつ
+    表示される差分と集計値が必ず一致するようにした。
+    """
+    matcher = difflib.SequenceMatcher(None, _split_lines(previous_source), _split_lines(current_source))
     added = 0
     deleted = 0
-    for line in difflib.ndiff(_split_lines(previous_source), _split_lines(current_source)):
-        if line.startswith("+ "):
-            added += 1
-        elif line.startswith("- "):
-            deleted += 1
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("replace", "delete"):
+            deleted += i2 - i1
+        if tag in ("replace", "insert"):
+            added += j2 - j1
+    return added, deleted
+
+
+def _count_from_lines(lines: list[dict[str, Any]]) -> tuple[int, int]:
+    """組み立て済みの行差分から追加・削除行数を数える（同じ差分を2回計算しないため）。"""
+    added = sum(1 for line in lines if line["type"] == "insert")
+    deleted = sum(1 for line in lines if line["type"] == "delete")
     return added, deleted
 
 
@@ -117,17 +147,24 @@ def _diff_lines(previous_source: str, current_source: str, context: int = 3) -> 
 def _diff_result(
     file: dict[str, Any],
     status: str,
-    added: int,
-    deleted: int,
+    added: int | None,
+    deleted: int | None,
     previous_source: str,
     current_source: str,
+    include_lines: bool = True,
 ) -> dict[str, Any]:
-    """差分レスポンスの1件を組み立てる。"""
+    """差分レスポンスの1件を組み立てる。
+
+    added/deletedにNoneを渡すと、行差分（またはSequenceMatcher）から自動集計する。
+    """
+    lines = _diff_lines(previous_source, current_source) if include_lines else []
+    if added is None or deleted is None:
+        added, deleted = _count_from_lines(lines) if include_lines else _count_changed_lines(previous_source, current_source)
     return {
         "name": file.get("name", ""),
         "type": file.get("type", ""),
         "status": status,
         "added_lines": added,
         "deleted_lines": deleted,
-        "lines": _diff_lines(previous_source, current_source),
+        "lines": lines,
     }

@@ -14,6 +14,10 @@ from typing import Any
 
 from .vertex_client import GEMINI_MODEL, get_genai_client
 
+# 1回のプロンプトに載せる差分の上限（文字数）。大量の変更を一度にセーブした場合に
+# モデルの入力上限超過・レスポンス遅延・コスト増を招くため切り詰める（2026-09-15）。
+MAX_DIFF_CHARS = 120_000
+
 RESPONSE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -87,7 +91,22 @@ def _build_diff_blocks(
             )
         )
         diff_blocks.append(f"## ファイル: {name} ({file_type})\n```diff\n{unified}\n```")
-    return diff_blocks
+    return _truncate_blocks(diff_blocks)
+
+
+def _truncate_blocks(diff_blocks: list[str]) -> list[str]:
+    """差分ブロックの合計がMAX_DIFF_CHARSに収まるよう切り詰める。"""
+    total = 0
+    truncated: list[str] = []
+    for block in diff_blocks:
+        if total >= MAX_DIFF_CHARS:
+            truncated.append("（以降のファイルの差分は、サイズ上限のため省略しています）")
+            break
+        if total + len(block) > MAX_DIFF_CHARS:
+            block = block[: MAX_DIFF_CHARS - total] + "\n…（以下、サイズ上限のため省略）\n```"
+        total += len(block)
+        truncated.append(block)
+    return truncated
 
 
 def _build_prompt(project_name: str, diff_blocks: list[str]) -> str:

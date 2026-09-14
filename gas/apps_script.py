@@ -13,7 +13,12 @@ APPS_SCRIPT_CONTENT_URL = "https://script.googleapis.com/v1/projects/{script_id}
 
 @dataclass
 class AppsScriptAPIError(Exception):
-    """Apps Script APIのエラー情報を保持する。"""
+    """Apps Script APIのエラー情報を保持する。
+
+    messageは画面にそのまま表示される想定のため、日本語で「何が起きていて何をすればよいか」を入れる
+    （利用者は非エンジニアで、Googleが返す英語の原文だけでは対処が分からないため、2026-09-15）。
+    Googleからの原文はdetailsにそのまま残すので、調査時はそちらを参照する。
+    """
 
     status_code: int
     message: str
@@ -31,7 +36,7 @@ def fetch_source_files(script_id: str, creds: Credentials) -> list[dict[str, str
     if not response.ok:
         raise AppsScriptAPIError(
             status_code=response.status_code,
-            message=_extract_error_message(response),
+            message=_user_message(response),
             details=_safe_json(response),
         )
 
@@ -67,9 +72,46 @@ def update_content(script_id: str, source_files: list[dict[str, str]], creds: Cr
     if not response.ok:
         raise AppsScriptAPIError(
             status_code=response.status_code,
-            message=_extract_error_message(response),
+            message=_user_message(response),
             details=_safe_json(response),
         )
+
+
+def _user_message(response: requests.Response) -> str:
+    """Googleのエラー応答を、非エンジニアが読んで次の行動が分かる日本語の説明に変換する。
+
+    該当する定型パターンが無い場合は原文をそのまま返す（推測で誤った案内をしないため）。
+    """
+    raw = _extract_error_message(response)
+    lowered = raw.lower()
+    status = response.status_code
+
+    if "has not enabled the apps script api" in lowered:
+        return (
+            "このGASを操作するGoogleアカウントで「Google Apps Script API」が有効になっていません。"
+            "そのアカウントで https://script.google.com/home/usersettings を開き、"
+            "「Google Apps Script API」をオンにしてから数分待って、もう一度お試しください。"
+        )
+    if status == 401:
+        return (
+            "Googleアカウントの認可の期限が切れています。画面左下の「Googleアカウントを接続する」から"
+            "接続し直してください。"
+        )
+    if status == 403:
+        return (
+            "このGASへのアクセス権がありません。台帳に登録したGoogleアカウントが、"
+            "対象のGASを開ける権限を持っているかご確認ください。"
+        )
+    if status == 404:
+        return (
+            "対象のGASが見つかりません。台帳に登録したスクリプトIDが正しいか、"
+            "そのGASが削除されていないかをご確認ください。"
+        )
+    if status == 429:
+        return "Google側の利用上限に達したため、一時的に処理できませんでした。しばらく待ってからもう一度お試しください。"
+    if status >= 500:
+        return "Google側で一時的な障害が発生しています。しばらく待ってからもう一度お試しください。"
+    return raw
 
 
 def _extract_error_message(response: requests.Response) -> str:

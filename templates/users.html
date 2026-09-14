@@ -314,7 +314,13 @@ async function init() {
         return;
       }
       emailInput.value = '';
-      showToast(`${email} を追加しました。`);
+      if (data.invitation_sent === false) {
+        // 招待メールはベストエフォート。届いていないのに「追加しました」だけ出ると
+        // 管理者が気づけないため、失敗時はその旨を明示する（2026-09-15）。
+        showToast(`${email} を追加しましたが、招待メールは送信できませんでした（${data.invitation_error || '理由不明'}）。一覧の「招待」から再送できます。`, true);
+      } else {
+        showToast(`${email} を追加し、招待メールを送信しました。`);
+      }
       await loadUsers();
     } finally {
       btn.disabled = false;

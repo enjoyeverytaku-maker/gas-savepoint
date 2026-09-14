@@ -8,9 +8,9 @@ Googleアカウントで個別に接続し、そのGASの操作は登録者本�
 - `google_accounts/{正規化したメールアドレス}` に、接続済みアカウントごとの情報を保存する
   （パートナーズ版のuser_token_store.pyと同じ発想。ただしSecret Manager側はハッシュ化した
   シークレットIDにリフレッシュトークンを1件ずつ保存し、Firestore側にはトークン本体を置かない）
-- GASの台帳登録時に「どの接続済みアカウントで操作するか」(owner_email)を選び、以降そのGASの
-  Apps Script API呼び出しは全てそのアカウントの認証情報で行う（gas/routes.py等の呼び出し側で
-  get_credentials_for(project["owner_email"]) を使う）
+- GASの台帳登録時に「どの接続済みアカウントで操作するか」(gas_projects.google_account)を選び、
+  以降そのGASのApps Script API呼び出しは全てそのアカウントの認証情報で行う（gas/routes.py等の
+  呼び出し側で get_credentials_for(project["google_account"]) を使う）
 - ユーザー招待メール(gas/invitations.py)は「送信操作をしている管理者自身」の接続済みアカウントを
   使う。これによりメール送信専用の別アカウントという概念を増やさずに済む
 
@@ -36,6 +36,7 @@ from google_auth_oauthlib.flow import Flow
 
 from firestore_client import db as _shared_db
 from . import secrets
+from .users import normalize_email
 
 # script.projects はGAS本体の読み書きに必要な最小スコープ（読み取り専用に分離する場合は
 # script.projects.readonlyへの変更を検討、docs/general_saas_roadmap.md §3参照）。
@@ -63,17 +64,16 @@ _SECRET_PREFIX = "savepoint-oauth-token-"
 # Secret Manager経由のRefresh Token取得＋Googleへのアクセストークン更新を行う
 # （登録プロジェクト数が増えるほどダッシュボードが遅くなっていた問題への対処、2026-09-12。
 # 複数アカウント対応後もアカウントごとにキャッシュして同じ理由で再取得を避ける）。
+# dict自体の読み書きはGILのもとでアトミックなのでキャッシュ参照にロックは不要。
+# _credentials_lockは「アカウントごとのロックを配るための辞書」を守るためだけに使う。
 _credentials_cache: dict[str, Credentials] = {}
+_account_locks: dict[str, threading.Lock] = {}
 _credentials_lock = threading.Lock()
 
 
 def _db() -> firestore.Client:
     # プロセス共有のFirestoreシングルトンを使う（firestore_client.py参照）。
     return _shared_db()
-
-
-def normalize_email(email: str) -> str:
-    return (email or "").strip().lower()
 
 
 def _secret_id_for_email(email: str) -> str:
@@ -199,13 +199,22 @@ def get_credentials_for(email: str) -> Credentials:
     有効なアクセストークンをアカウントごとにプロセス内キャッシュし、失効するまで再利用する
     （キャッシュしないと、登録プロジェクト数分だけ毎回Secret Manager取得＋Googleへの
     トークンリフレッシュが並列発生し、プロジェクトが増えるほど遅くなっていた、2026-09-12）。
+
+    2026-09-15最適化: ロックの粒度をアカウント単位に分けた。以前はグローバルロックを
+    保持したままSecret Manager取得とGoogleへのトークン更新（ネットワークI/O・数百ms）を
+    行っていたため、キャッシュ済みの別アカウントの読み取りまで待たされ、担当者ごとに
+    アカウントが分かれる今の設計（＝リフレッシュ対象が複数）では全体が直列化していた。
     """
     email = normalize_email(email)
     if not email:
         raise ValueError("email is required")
 
-    global _credentials_cache
-    with _credentials_lock:
+    cached = _credentials_cache.get(email)
+    if cached is not None and cached.valid:
+        return cached
+
+    # 同じアカウントへの同時リフレッシュだけを抑止する（別アカウントは並行して進める）。
+    with _lock_for(email):
         cached = _credentials_cache.get(email)
         if cached is not None and cached.valid:
             return cached
@@ -225,8 +234,16 @@ def get_credentials_for(email: str) -> Credentials:
         return creds
 
 
+def _lock_for(email: str) -> threading.Lock:
+    """アカウントごとのリフレッシュ用ロックを取得する（辞書自体の操作だけを短時間ロックする）。"""
+    with _credentials_lock:
+        lock = _account_locks.get(email)
+        if lock is None:
+            lock = threading.Lock()
+            _account_locks[email] = lock
+        return lock
+
+
 def _invalidate_credentials_cache(email: str) -> None:
     """再接続（スコープ変更等）でRefresh Tokenが更新された際にそのアカウント分のキャッシュを破棄する。"""
-    global _credentials_cache
-    with _credentials_lock:
-        _credentials_cache.pop(normalize_email(email), None)
+    _credentials_cache.pop(normalize_email(email), None)

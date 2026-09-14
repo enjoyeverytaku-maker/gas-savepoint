@@ -73,10 +73,15 @@ class ProjectUpdate(BaseModel):
 
 
 class RollbackRequest(BaseModel):
-    """ロールバックリクエスト。"""
+    """ロールバックリクエスト。
+
+    「誰が実行したか」はリクエスト本文では受け取らず、必ず認証済みのactor（IAPが渡した
+    メールアドレス）を使う（2026-09-15。以前はperformed_byをクライアントから受け取っており、
+    改変したリクエストを送れば監査ログ上の実行者を詐称できた。監査ログの信頼性が本商品の
+    中核価値であるため、クライアント申告値は一切採用しない）。
+    """
 
     target_version_no: int
-    performed_by: str = Field(default="unknown")
     expected_current_hash: str | None = Field(
         default=None,
         description="クライアントが把握している現在の状態のハッシュ。楽観ロックに使用（省略も可だが推奨）",
@@ -84,9 +89,11 @@ class RollbackRequest(BaseModel):
 
 
 class ReleaseCreate(BaseModel):
-    """リリース申請リクエスト。"""
+    """セーブポイント作成リクエスト。
 
-    requested_by: str = Field(default="unknown")
+    申請者はRollbackRequestと同じ理由でクライアントから受け取らず、認証済みactorを使う。
+    """
+
     comment: str = ""
 
 
@@ -399,7 +406,7 @@ def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(requ
     try:
         result = create_release(
             project_id=project_id,
-            requested_by=body.requested_by,
+            requested_by=actor,
             comment=body.comment,
         )
     except ReleaseNotFoundError as exc:
@@ -474,7 +481,7 @@ def post_rollback(project_id: str, body: RollbackRequest, actor: str = Depends(r
         result = rollback_to_version(
             project_id=project_id,
             target_version_no=body.target_version_no,
-            performed_by=body.performed_by,
+            performed_by=actor,
             expected_current_hash=body.expected_current_hash,
         )
     except RollbackTargetNotFoundError as exc:

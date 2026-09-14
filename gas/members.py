@@ -1,18 +1,22 @@
 """プロジェクト単位メンバーシップ（パートナーズ版members_admin.py相当）。
 
 GASプロジェクトごとにowner/maintainer/developer/viewerを個別に割り当てる。
-未設定のユーザーはauth/users.pyのグローバルロールにフォールバックする
-（auth/users.py get_project_role参照）。
+グローバルadminは常に全プロジェクトへowner相当でアクセスできるが、それ以外のユーザーは
+ここで個別に付与されない限りアクセス権を持たない（グローバルロールへのフォールバックは
+行わない。auth/users.py get_project_role参照。2026-09-12の権限再設計でフォールバックを
+廃止したのにこの説明文が古いままだったため2026-09-15に修正）。
+
+メールアドレスはauth/users.normalize_emailで正規化してからドキュメントIDに使う
+（大文字小文字の違いで権限が引けなくなるのを防ぐ、2026-09-15）。
 """
 from __future__ import annotations
 
 from typing import Any
 
-from google.cloud import firestore
 from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-from auth.users import VALID_PROJECT_ROLES
+from auth.users import VALID_PROJECT_ROLES, normalize_email
 
 PROJECTS_COLLECTION = "gas_projects"
 MEMBERS_SUBCOLLECTION = "members"
@@ -30,18 +34,22 @@ def list_members(project_id: str) -> list[dict[str, Any]]:
         data["email"] = snapshot.id
         data["updated_at"] = _to_iso(data.get("updated_at"))
         result.append(data)
-    return result
+    return sorted(result, key=lambda member: member.get("email", ""))
 
 
 def upsert_member(project_id: str, email: str, role: str, updated_by: str) -> dict[str, Any]:
     """プロジェクトへメンバーを追加・ロール更新する。"""
     if role not in VALID_PROJECT_ROLES:
         raise ValueError(f"invalid role: {role}")
-    _members_ref(project_id).document(email).set(
+    email = normalize_email(email)
+    if not email:
+        raise ValueError("email is required")
+    doc_ref = _members_ref(project_id).document(email)
+    doc_ref.set(
         {"role": role, "updated_by": updated_by, "updated_at": SERVER_TIMESTAMP},
         merge=True,
     )
-    snapshot = _members_ref(project_id).document(email).get()
+    snapshot = doc_ref.get()
     data = snapshot.to_dict() or {}
     data["email"] = email
     data["updated_at"] = _to_iso(data.get("updated_at"))
@@ -49,8 +57,9 @@ def upsert_member(project_id: str, email: str, role: str, updated_by: str) -> di
 
 
 def remove_member(project_id: str, email: str) -> None:
-    """プロジェクトからメンバーを削除する（削除後はグローバルロールへフォールバックする）。"""
-    _members_ref(project_id).document(email).delete()
+    """プロジェクトからメンバーを削除する（削除後はそのプロジェクトへのアクセス権を失う。
+    グローバルadminだけは引き続きowner相当でアクセスできる）。"""
+    _members_ref(project_id).document(normalize_email(email)).delete()
 
 
 def _to_iso(value: Any) -> Any:

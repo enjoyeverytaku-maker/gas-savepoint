@@ -22,6 +22,19 @@ from .diff import calculate_diff, calculate_source_hash
 
 COLLECTION = "changes"
 
+# 一覧表示に必要な軽量フィールド。source_files（GASソース全文）を含めないのが要点で、
+# 画面の変更履歴はファイル名・増減行数・検知日時しか使わない（templates/changes.html参照）。
+METADATA_FIELDS = [
+    "project_id",
+    "source_hash",
+    "previous_hash",
+    "diff",
+    "detected_at",
+    "release_status",
+    "release_id",
+    "released_at",
+]
+
 
 @dataclass
 class ChangeNotFoundError(Exception):
@@ -31,12 +44,12 @@ class ChangeNotFoundError(Exception):
 
 
 def get_baseline(project_id: str) -> tuple[list[dict[str, Any]], str | None]:
-    """変更検知の比較基準（直近のchange、無ければ直近のリリース）を返す。"""
+    """変更検知の比較基準（直近のchange、無ければ直近のセーブポイント）を返す。"""
     from .savepoints import get_latest_savepoint
 
     latest_change = _get_latest_change(project_id)
     if latest_change is not None:
-        return latest_change["source_files"], latest_change["source_hash"]
+        return latest_change.get("source_files") or [], latest_change.get("source_hash")
 
     latest_savepoint = get_latest_savepoint(project_id)
     if latest_savepoint is not None:
@@ -55,7 +68,10 @@ def detect_change(project_id: str, source_files: list[dict[str, Any]]) -> dict[s
     if current_hash == baseline_hash:
         return None
 
-    diff = calculate_diff(source_files, baseline_files)
+    # 保存する差分は行単位データを持たない（画面の変更履歴はファイル単位の増減行数しか
+    # 使わない一方、行単位データを持たせるとソース本文と合わせてFirestoreの1ドキュメント
+    # 上限1MiBを超えて保存自体が失敗しうるため、2026-09-15）。
+    diff = calculate_diff(source_files, baseline_files, include_lines=False)
     if not diff:
         return None
 
@@ -75,11 +91,18 @@ def detect_change(project_id: str, source_files: list[dict[str, Any]]) -> dict[s
     return created
 
 
-def list_changes(project_id: str | None = None) -> list[dict[str, Any]]:
-    """変更一覧を新しい順で返す（project_id省略時は全プロジェクト横断）。"""
+def list_changes(project_id: str | None = None, include_source: bool = False) -> list[dict[str, Any]]:
+    """変更一覧を新しい順で返す（project_id省略時は全プロジェクト横断）。
+
+    既定ではGASソース本文（source_files）を含めない。ダッシュボードと変更履歴画面が
+    毎回この一覧を読むため、本文まで取得すると検知件数が増えるほど際限なく重くなる
+    （2026-09-15、select()で必要フィールドだけ取得する方式へ変更）。
+    """
     query = db().collection(COLLECTION)
     if project_id:
         query = query.where("project_id", "==", project_id)
+    if not include_source:
+        query = query.select(METADATA_FIELDS)
     changes = [serialize_change(snapshot) for snapshot in query.stream()]
     return sorted(changes, key=lambda item: item.get("detected_at") or "", reverse=True)
 
@@ -129,9 +152,19 @@ def serialize_change(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
 
 
 def _get_latest_change(project_id: str) -> dict[str, Any] | None:
-    """指定プロジェクトの最新change（状態を問わない）を取得する。"""
-    changes = list_changes(project_id)
-    return changes[0] if changes else None
+    """指定プロジェクトの最新change（状態を問わない）をソース本文込みで取得する。
+
+    まず軽量なメタデータだけで最新の1件を特定し、本文はその1件だけを取りに行く
+    （変更検知は定期実行で全プロジェクト分が繰り返し走るため、ここで過去の検知履歴を
+    本文ごと読み込むと履歴が増えるほど毎回重くなっていた、2026-09-15）。
+    """
+    metadata = list_changes(project_id)
+    if not metadata:
+        return None
+    snapshot = db().collection(COLLECTION).document(metadata[0]["id"]).get()
+    if not snapshot.exists:
+        return None
+    return serialize_change(snapshot)
 
 
 def _to_iso(value: Any) -> Any:

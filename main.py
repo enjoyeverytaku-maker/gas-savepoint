@@ -174,13 +174,18 @@ def _app_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _try_send_invitation(email: str, role: str, app_base_url: str, sender_email: str) -> None:
-    """招待メール送信をベストエフォートで行う（失敗してもユーザー登録自体は成功させる。
-    送信者=操作している管理者自身が未接続の場合もここで静かに失敗する）。"""
+def _try_send_invitation(email: str, role: str, app_base_url: str, sender_email: str) -> str | None:
+    """招待メール送信をベストエフォートで行う（失敗してもユーザー登録自体は成功させる）。
+
+    失敗理由を文字列で返す（成功時はNone）。2026-09-15修正: 以前は例外を握りつぶすだけで
+    呼び出し元へ何も返しておらず、送信者が自分のGoogleアカウントを未接続だった場合などに
+    メールが届いていないのに画面上は「追加しました」と表示され、管理者が気づけなかった。
+    """
     try:
         send_invitation_email(email, role, app_base_url, sender_email)
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 - 失敗理由を画面へ返すため広く捕捉
+        return str(exc)
+    return None
 
 
 @app.post("/api/users")
@@ -191,8 +196,13 @@ def post_user(body: UserUpsert, request: Request, actor: str = Depends(require_r
         user = upsert_user(email=body.email, role=body.role, updated_by=actor)
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"ok": False, "error": {"type": "invalid_role", "message": str(exc)}})
-    _try_send_invitation(body.email, body.role, _app_base_url(request), actor)
-    return {"ok": True, "user": user}
+    invitation_error = _try_send_invitation(user["email"], body.role, _app_base_url(request), actor)
+    return {
+        "ok": True,
+        "user": user,
+        "invitation_sent": invitation_error is None,
+        "invitation_error": invitation_error,
+    }
 
 
 @app.post("/api/users/{email}/invite")

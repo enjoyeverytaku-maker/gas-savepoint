@@ -24,7 +24,7 @@ from .apps_script import AppsScriptAPIError, fetch_source_files, update_content
 from .audit import ACTION_ROLLBACK, log_operation
 from .diff import calculate_source_hash
 from .projects import get_project
-from .savepoints import create_savepoint, get_savepoint_by_version
+from .savepoints import create_savepoint, get_savepoint_by_version, list_savepoints
 
 
 @dataclass
@@ -91,13 +91,18 @@ def rollback_to_version(
         )
         raise RollbackConflictError(current_hash=current_hash, expected_hash=expected_current_hash)
 
-    # 1. 復元前に、今まさにGAS本体にある状態を自動バックアップする（ロールバック自体を取り消せるようにする）
-    backup_savepoint = create_savepoint(
-        project_id=project_id,
-        source_files=current_files,
-        comment=f"ロールバック前の自動バックアップ（v{target_version_no}への復元直前）",
-        created_by=performed_by,
-    )
+    # 1. 復元前に、今まさにGAS本体にある状態を自動バックアップする（ロールバック自体を取り消せるようにする）。
+    #    ただし現在の状態が既存のセーブポイントと完全に一致する場合は、そのセーブポイント自体が
+    #    「復元前の状態」なので新規作成しない（2026-09-15。特に、ロールバックがApps Script API側の
+    #    エラーで失敗した場合、再試行のたびに中身が同一のバックアップが増え続けていた）。
+    backup_version_no = _existing_version_with_hash(project_id, current_hash)
+    if backup_version_no is None:
+        backup_version_no = create_savepoint(
+            project_id=project_id,
+            source_files=current_files,
+            comment=f"ロールバック前の自動バックアップ（v{target_version_no}への復元直前）",
+            created_by=performed_by,
+        )["version_no"]
 
     # 2. 過去のソースをGAS本体へ反映する（全体置換）
     try:
@@ -109,7 +114,7 @@ def rollback_to_version(
             user=performed_by,
             target_version=target_version_no,
             result="failed_update",
-            details={"auto_backup_version_no": backup_savepoint["version_no"]},
+            details={"auto_backup_version_no": backup_version_no},
         )
         raise
 
@@ -119,10 +124,23 @@ def rollback_to_version(
         user=performed_by,
         target_version=target_version_no,
         result="success",
-        details={"auto_backup_version_no": backup_savepoint["version_no"]},
+        details={"auto_backup_version_no": backup_version_no},
     )
 
     return {
         "restored_version_no": target_version_no,
-        "auto_backup_version_no": backup_savepoint["version_no"],
+        "auto_backup_version_no": backup_version_no,
     }
+
+
+def _existing_version_with_hash(project_id: str, source_hash: str) -> int | None:
+    """現在の状態と完全に一致する既存セーブポイントのバージョン番号を返す（無ければNone）。
+
+    一致するものがあれば、それが「復元前の状態」に戻るための地点として使えるため、
+    同じ内容のバックアップを重複して作る必要がない。比較はソース全文のハッシュで行う
+    （list_savepointsは既定で本文を読まないので、この判定のために本文を取得することはない）。
+    """
+    for savepoint in list_savepoints(project_id):
+        if savepoint.get("source_hash") == source_hash:
+            return savepoint.get("version_no")
+    return None
