@@ -100,9 +100,14 @@ def health():
 
 
 @app.get("/oauth/connect")
-def oauth_connect():
-    """管理者がGoogleアカウントを接続する起点（F9）。"""
-    return RedirectResponse(oauth.build_auth_url())
+def oauth_connect(actor: str = Depends(require_role("member"))):
+    """ログイン中の本人が、自分のGoogleアカウントを接続する起点（F9）。
+
+    2026-09-14再設計: パートナーズ版(multiuser_oauth.py)を精査した結果、「1つの代表アカウントが
+    全GASを管理する」のではなく「GASを作った担当者それぞれが自分のアカウントで接続する」設計と
+    判明したため、誰でも（member以上）自分自身のGoogleアカウントを接続できるようにした。
+    """
+    return RedirectResponse(oauth.build_auth_url(requested_by=actor))
 
 
 @app.get("/oauth/callback")
@@ -116,12 +121,30 @@ def oauth_callback(request: Request):
 
 @app.get("/api/oauth/status")
 def oauth_status():
-    connected = oauth.is_connected()
+    """ローカル開発時のRBACユーザーシミュレーション用（GAS接続状態とは無関係、2026-09-14分離）。
+
+    SAVEPOINT_DEV_USER_EMAILで指定したメールアドレスを、SAVEPOINT_DEV_MODE時にX-Debug-User-Email
+    ヘッダー代わりにブラウザ側へ伝える。複数アカウント対応後は「唯一の接続アカウント」という概念が
+    無くなったため、以前のように接続済みGoogleアカウントを流用することはできない。
+    """
+    dev_mode = os.environ.get("SAVEPOINT_DEV_MODE") == "1"
     return {
-        "connected": connected,
-        "email": oauth.get_connected_email() if connected else None,
-        "dev_mode": os.environ.get("SAVEPOINT_DEV_MODE") == "1",
+        "dev_mode": dev_mode,
+        "email": os.environ.get("SAVEPOINT_DEV_USER_EMAIL") if dev_mode else None,
     }
+
+
+@app.get("/api/oauth/my-connection")
+def oauth_my_connection(actor: str = Depends(require_role("member"))) -> dict[str, Any]:
+    """ログイン中の本人自身のGoogleアカウント接続状況を返す（サイドバー・台帳画面表示用）。"""
+    connected = oauth.is_account_connected(actor)
+    return {"connected": connected, "email": actor if connected else None}
+
+
+@app.get("/api/oauth/accounts")
+def oauth_accounts(actor: str = Depends(require_role("member"))) -> list[dict[str, Any]]:
+    """接続済みGoogleアカウント一覧を返す（台帳登録時にどのアカウントで操作するか選ぶ用）。"""
+    return oauth.list_connected_accounts()
 
 
 class UserUpsert(BaseModel):
@@ -151,33 +174,35 @@ def _app_base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _try_send_invitation(email: str, role: str, app_base_url: str) -> None:
-    """招待メール送信をベストエフォートで行う（失敗してもユーザー登録自体は成功させる）。"""
+def _try_send_invitation(email: str, role: str, app_base_url: str, sender_email: str) -> None:
+    """招待メール送信をベストエフォートで行う（失敗してもユーザー登録自体は成功させる。
+    送信者=操作している管理者自身が未接続の場合もここで静かに失敗する）。"""
     try:
-        send_invitation_email(email, role, app_base_url)
+        send_invitation_email(email, role, app_base_url, sender_email)
     except Exception:
         pass
 
 
 @app.post("/api/users")
 def post_user(body: UserUpsert, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """ユーザーのロールを登録・更新する（管理者限定）。登録成功時、招待メールをベストエフォートで送信する。"""
+    """ユーザーのロールを登録・更新する（管理者限定）。登録成功時、招待メールをベストエフォートで送信する
+    （送信元は操作している管理者自身の接続済みGoogleアカウント）。"""
     try:
         user = upsert_user(email=body.email, role=body.role, updated_by=actor)
     except ValueError as exc:
         return JSONResponse(status_code=400, content={"ok": False, "error": {"type": "invalid_role", "message": str(exc)}})
-    _try_send_invitation(body.email, body.role, _app_base_url(request))
+    _try_send_invitation(body.email, body.role, _app_base_url(request), actor)
     return {"ok": True, "user": user}
 
 
 @app.post("/api/users/{email}/invite")
 def post_user_invite(email: str, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """招待メールを再送する（管理者限定）。"""
+    """招待メールを再送する（管理者限定）。送信元は操作している管理者自身の接続済みGoogleアカウント。"""
     user = get_user(email)
     if user is None:
         return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": "ユーザーが見つかりません"}})
     try:
-        send_invitation_email(email, user["role"], _app_base_url(request))
+        send_invitation_email(email, user["role"], _app_base_url(request), actor)
     except Exception as exc:  # noqa: BLE001 - メール送信失敗の理由を画面へそのまま返すため広く捕捉
         return JSONResponse(status_code=200, content={"ok": False, "error": {"type": "invitation_failed", "message": str(exc)}})
     return {"ok": True}

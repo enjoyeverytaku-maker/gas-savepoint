@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from auth.oauth import get_credentials
+from auth.oauth import get_credentials_for
 
 from .apps_script import AppsScriptAPIError, fetch_source_files, update_content
 from .audit import ACTION_ROLLBACK, log_operation
@@ -63,7 +63,7 @@ def rollback_to_version(
             f"復元先のセーブポイントが見つかりません: project_id={project_id}, version_no={target_version_no}"
         )
 
-    creds = get_credentials()
+    creds = get_credentials_for(project["google_account"])
 
     try:
         current_files = fetch_source_files(project["script_id"], creds)

@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 from google.cloud import firestore
 from firestore_client import db
 
-from auth.oauth import get_credentials
+from auth.oauth import get_credentials_for
 from auth.secrets import get_secret
 
 from .apps_script import AppsScriptAPIError, fetch_source_files
@@ -46,17 +46,20 @@ def check_project(project_id: str, script_id: str, creds: Any) -> dict[str, Any]
 
 
 def check_all_projects() -> dict[str, Any]:
-    """登録済み全GASプロジェクトの変更有無をチェックし、検知した変更を永続化する。"""
+    """登録済み全GASプロジェクトの変更有無をチェックし、検知した変更を永続化する。
+
+    プロジェクトごとに登録時の担当者(google_account)の認証情報を使う（2026-09-14、
+    GASごとに担当者が個別接続する設計へ変更）。get_credentials_for自体がアカウントごとに
+    プロセス内キャッシュするため、同じ担当者のプロジェクトが複数あっても再取得は発生しない。
+    """
     projects = list_projects()
-    creds = None
     checked = 0
     changed = 0
     errored = 0
 
     for project in projects:
         try:
-            if creds is None:
-                creds = get_credentials()
+            creds = get_credentials_for(project["google_account"])
             change = check_project(project["id"], project["script_id"], creds)
             checked += 1
             if change is not None:

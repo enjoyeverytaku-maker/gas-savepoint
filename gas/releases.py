@@ -17,7 +17,7 @@ from google.cloud import firestore
 from firestore_client import db
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
-from auth.oauth import get_credentials
+from auth.oauth import get_credentials_for
 
 from .ai_review import generate_change_review
 from .apps_script import fetch_source_files
@@ -54,7 +54,7 @@ def create_release(project_id: str, requested_by: str, comment: str = "") -> dic
     previous_files = previous_savepoint["source_files"] if previous_savepoint else []
 
     # セーブ直前に現在のGASを再取得し、まだ検知していない駆け込み変更があれば検知しておく
-    source_files = fetch_source_files(project["script_id"], get_credentials())
+    source_files = fetch_source_files(project["script_id"], get_credentials_for(project["google_account"]))
     detect_change(project_id, source_files)
 
     changes = get_unreleased_changes(project_id)

@@ -32,7 +32,12 @@ echo -n "<クライアントID>" | gcloud secrets create savepoint-oauth-client-
 echo -n "<クライアントシークレット>" | gcloud secrets create savepoint-oauth-client-secret --data-file=- --project=$GCP_PROJECT
 ```
 
-4. アプリを起動し `/oauth/connect` にアクセスすると同意画面へリダイレクトされ、許可後は自動的に `savepoint-oauth-refresh-token` シークレットへRefresh Tokenが保存される（`/api/oauth/status` で接続状態を確認できる）
+4. アプリを起動し、ログイン中の本人が `/oauth/connect` にアクセスすると同意画面へリダイレクトされ、
+   許可後は自動的にそのアカウント専用のSecret Managerシークレット（`savepoint-oauth-token-<メールのハッシュ>`）
+   へRefresh Tokenが保存される（2026-09-14、GASを作った担当者それぞれが自分のGoogleアカウントで個別に
+   接続する設計へ変更。パートナーズ版`multiuser_oauth.py`を参考にした。自分の接続状態は
+   `GET /api/oauth/my-connection` で確認できる。`GET /api/oauth/status` は開発時のRBACユーザー切り替え
+   専用に用途が分かれている、後述）
 
 ## 権限管理（RBAC、F6）
 
@@ -49,13 +54,20 @@ IAPは認証済みユーザーのメールアドレスを `X-Goog-Authenticated-
 ### ローカル開発時
 
 IAPが無いローカル環境では、`SAVEPOINT_DEV_MODE=1` を設定した場合のみ `X-Debug-User-Email` ヘッダーで
-ユーザーを指定できる（ダッシュボードもこのヘッダーを自動付与する）。**本番では絶対に設定しないこと**
-（`OAUTHLIB_INSECURE_TRANSPORT` と同種の開発専用の抜け穴）。
+ユーザーを指定できる（画面側は `SAVEPOINT_DEV_USER_EMAIL` の値を `GET /api/oauth/status` 経由で
+受け取り、このヘッダーを自動付与する。`?debug_email=` クエリパラメータでも同じ値を渡せる。
+`<a href>` での素のページ遷移（`/oauth/connect` 等）はJSの `fetch()` と違いヘッダーを付けられないため）。
+**本番では絶対に設定しないこと**（`OAUTHLIB_INSECURE_TRANSPORT` と同種の開発専用の抜け穴）。
 
 ```bash
-export SAVEPOINT_DEV_MODE=1  # ローカル開発のみ。本番では設定しない
+export SAVEPOINT_DEV_MODE=1                        # ローカル開発のみ。本番では設定しない
+export SAVEPOINT_DEV_USER_EMAIL=you@example.com     # 画面側でシミュレートするユーザー（RBACのロール切り替え用。GAS接続とは別概念）
 curl -X POST localhost:8080/api/users -H "X-Debug-User-Email: you@example.com" -H "Content-Type: application/json" -d '{"email":"you@example.com","role":"admin"}'
 ```
+
+RBACのユーザー（上記）と、GASを操作するために接続するGoogleアカウント（`/oauth/connect`）は別概念。
+ローカルでGAS操作を試す場合は、admin登録後に画面から改めて `/oauth/connect` を踏んでGoogleの同意画面を
+通し、そのユーザー自身のGoogleアカウントを接続する必要がある。
 
 ## 自動検知（F11、Cloud Scheduler）
 

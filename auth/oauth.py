@@ -1,7 +1,18 @@
 """Google OAuth接続（F9、spec.md §11）。
 
-単一組織（萬年）向けのInternalユーザータイプ接続を前提とし、既存プロトタイプの
-multiuser_oauth.pyにあった複数組織選択ロジックは持ち込まない（クリーンリライト方針）。
+2026-09-14再設計: パートナーズ版参照実装(multiuser_oauth.py/user_token_store.py)を精査した結果、
+「1つの代表アカウントだけがGAS全体を管理する」設計ではなく、**GASを作った担当者それぞれが自分の
+Googleアカウントで個別に接続し、そのGASの操作は登録者本人のトークンで行う**設計だったと判明。
+萬年のように複数の担当者がそれぞれ自分でGASを作って管理している実態に合わせ、同じ設計を採用する。
+
+- `google_accounts/{正規化したメールアドレス}` に、接続済みアカウントごとの情報を保存する
+  （パートナーズ版のuser_token_store.pyと同じ発想。ただしSecret Manager側はハッシュ化した
+  シークレットIDにリフレッシュトークンを1件ずつ保存し、Firestore側にはトークン本体を置かない）
+- GASの台帳登録時に「どの接続済みアカウントで操作するか」(owner_email)を選び、以降そのGASの
+  Apps Script API呼び出しは全てそのアカウントの認証情報で行う（gas/routes.py等の呼び出し側で
+  get_credentials_for(project["owner_email"]) を使う）
+- ユーザー招待メール(gas/invitations.py)は「送信操作をしている管理者自身」の接続済みアカウントを
+  使う。これによりメール送信専用の別アカウントという概念を増やさずに済む
 
 前提となる事前設定（GCPコンソール側での手動作業、コードでは代替できない）:
   1. OAuth同意画面をInternalユーザータイプで作成する
@@ -10,6 +21,9 @@ multiuser_oauth.pyにあった複数組織選択ロジックは持ち込まな�
   3. 発行されたクライアントID・シークレットをSecret Managerへ登録する
      （シークレットID: savepoint-oauth-client-id / savepoint-oauth-client-secret）
 """
+from __future__ import annotations
+
+import hashlib
 import os
 import threading
 from urllib.parse import parse_qs, urlparse
@@ -29,7 +43,8 @@ from . import secrets
 # （gas/discovery.pyがDrive APIでmimeType=application/vnd.google-apps.scriptのファイルを
 # 検索する。既存プロトタイプのdiscover_apps_script_projects相当）。
 # gmail.send はユーザー招待メール（F6拡張）送信専用。受信・既存メールの読み取りは一切行わない
-# 最小スコープ（gmail.readonly等は要求しない）。
+# 最小スコープ（gmail.readonly等は要求しない）。全スコープをまとめて1回の同意で要求する
+# （GAS操作用と通知用で別々の接続フローを持たない、上記の設計統一による簡素化）。
 SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -40,22 +55,32 @@ SCOPES = [
 ]
 
 OAUTH_REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "http://localhost:8080/oauth/callback")
-REFRESH_TOKEN_SECRET_ID = "savepoint-oauth-refresh-token"
 
-_CONNECTION_DOC = ("google_account", "connection")
+ACCOUNTS_COLLECTION = "google_accounts"
+_SECRET_PREFIX = "savepoint-oauth-token-"
 
-# get_credentials()のプロセス内キャッシュ。未キャッシュ・失効時のみSecret Manager経由の
-# Refresh Token取得＋Googleへのアクセストークン更新を行う（登録プロジェクト数が増えるほど
-# ダッシュボードが遅くなっていた問題への対処、2026-09-12）。
-_credentials_cache: Credentials | None = None
+# get_credentials_for()のプロセス内キャッシュ（メールアドレスごと）。未キャッシュ・失効時のみ
+# Secret Manager経由のRefresh Token取得＋Googleへのアクセストークン更新を行う
+# （登録プロジェクト数が増えるほどダッシュボードが遅くなっていた問題への対処、2026-09-12。
+# 複数アカウント対応後もアカウントごとにキャッシュして同じ理由で再取得を避ける）。
+_credentials_cache: dict[str, Credentials] = {}
 _credentials_lock = threading.Lock()
 
 
 def _db() -> firestore.Client:
     # プロセス共有のFirestoreシングルトンを使う（firestore_client.py参照）。
-    # 以前はここだけ呼び出しごとに新規Clientを生成しており、gRPCチャンネルの
-    # 大量生成によるクラッシュの原因の一つだった（2026-09-12修正）。
     return _shared_db()
+
+
+def normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def _secret_id_for_email(email: str) -> str:
+    """メールアドレスから決定的なSecret Manager用IDを作る（Secret IDには@や.を使えないためハッシュ化。
+    パートナーズ版user_token_store.pyのlegacy_secret_idと同じ発想）。"""
+    digest = hashlib.sha256(normalize_email(email).encode("utf-8")).hexdigest()[:24]
+    return f"{_SECRET_PREFIX}{digest}"
 
 
 def _client_config() -> dict:
@@ -72,11 +97,14 @@ def _client_config() -> dict:
     }
 
 
-def build_auth_url() -> str:
+def build_auth_url(requested_by: str | None = None) -> str:
     """OAuth同意画面へのリダイレクト先URLを生成する。
 
     /oauth/connectと/oauth/callbackは別々のHTTPリクエスト（別Flowインスタンス）になるため、
     PKCEのcode_verifierをFirestoreへ一時保存し、stateをキーにcallback側で復元する。
+    requested_byはSavePoint側でログイン中のユーザー（監査ログ用、任意）。接続されるGoogle
+    アカウント自体はcallback側でuserinfoから取得した値を正とする（requested_byと一致するとは
+    限らない。同じ人が別のGoogleアカウントを繋ぐケースもあり得るため）。
     """
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=OAUTH_REDIRECT_URI)
     auth_url, state = flow.authorization_url(
@@ -85,13 +113,17 @@ def build_auth_url() -> str:
         include_granted_scopes="true",
     )
     _db().collection("oauth_flow_state").document(state).set(
-        {"code_verifier": flow.code_verifier, "created_at": firestore.SERVER_TIMESTAMP}
+        {
+            "code_verifier": flow.code_verifier,
+            "requested_by": requested_by,
+            "created_at": firestore.SERVER_TIMESTAMP,
+        }
     )
     return auth_url
 
 
 def handle_callback(authorization_response_url: str) -> dict:
-    """認可コードをトークンへ交換し、Refresh TokenをSecret Managerへ保存する。"""
+    """認可コードをトークンへ交換し、Refresh Tokenをそのアカウント専用のSecretへ保存する。"""
     query = parse_qs(urlparse(authorization_response_url).query)
     state = query.get("state", [None])[0]
     state_ref = _db().collection("oauth_flow_state").document(state) if state else None
@@ -112,12 +144,14 @@ def handle_callback(authorization_response_url: str) -> dict:
             "（2回目以降のconsentではrefresh_tokenが返らないことがあるため）"
         )
 
-    secrets.set_secret(REFRESH_TOKEN_SECRET_ID, creds.refresh_token)
-    _invalidate_credentials_cache()
+    email = normalize_email(_fetch_connected_email(creds))
+    if not email:
+        raise RuntimeError("接続したGoogleアカウントのメールアドレスを取得できませんでした")
 
-    email = _fetch_connected_email(creds)
-    collection, doc_id = _CONNECTION_DOC
-    _db().collection(collection).document(doc_id).set(
+    secrets.set_secret(_secret_id_for_email(email), creds.refresh_token)
+    _invalidate_credentials_cache(email)
+
+    _db().collection(ACCOUNTS_COLLECTION).document(email).set(
         {
             "email": email,
             "connected_at": firestore.SERVER_TIMESTAMP,
@@ -137,33 +171,46 @@ def _fetch_connected_email(creds: Credentials) -> str:
     return resp.json().get("email", "")
 
 
-def is_connected() -> bool:
-    collection, doc_id = _CONNECTION_DOC
-    return _db().collection(collection).document(doc_id).get().exists
+def is_account_connected(email: str) -> bool:
+    email = normalize_email(email)
+    if not email:
+        return False
+    return _db().collection(ACCOUNTS_COLLECTION).document(email).get().exists
 
 
-def get_connected_email() -> str | None:
-    """接続済みGoogleアカウントのメールアドレスを返す（ダッシュボードでの操作者表示用）。"""
-    collection, doc_id = _CONNECTION_DOC
-    snapshot = _db().collection(collection).document(doc_id).get()
-    if not snapshot.exists:
-        return None
-    return (snapshot.to_dict() or {}).get("email")
+def list_connected_accounts() -> list[dict]:
+    """接続済みアカウント一覧を返す（台帳登録時のowner_email選択・管理画面表示用）。"""
+    result = []
+    for snapshot in _db().collection(ACCOUNTS_COLLECTION).stream():
+        data = snapshot.to_dict() or {}
+        connected_at = data.get("connected_at")
+        result.append(
+            {
+                "email": data.get("email", snapshot.id),
+                "connected_at": connected_at.isoformat() if hasattr(connected_at, "isoformat") else connected_at,
+            }
+        )
+    return sorted(result, key=lambda a: a["email"])
 
 
-def get_credentials() -> Credentials:
-    """保存済みのRefresh Tokenから、Apps Script API呼び出し用のCredentialsを取得する。
+def get_credentials_for(email: str) -> Credentials:
+    """指定アカウントの保存済みRefresh Tokenから、Apps Script API呼び出し用のCredentialsを取得する。
 
-    有効なアクセストークンをプロセス内にキャッシュし、失効するまで再利用する
+    有効なアクセストークンをアカウントごとにプロセス内キャッシュし、失効するまで再利用する
     （キャッシュしないと、登録プロジェクト数分だけ毎回Secret Manager取得＋Googleへの
-    トークンリフレッシュが並列発生し、プロジェクトが増えるほど遅くなっていた）。
+    トークンリフレッシュが並列発生し、プロジェクトが増えるほど遅くなっていた、2026-09-12）。
     """
+    email = normalize_email(email)
+    if not email:
+        raise ValueError("email is required")
+
     global _credentials_cache
     with _credentials_lock:
-        if _credentials_cache is not None and _credentials_cache.valid:
-            return _credentials_cache
+        cached = _credentials_cache.get(email)
+        if cached is not None and cached.valid:
+            return cached
 
-        refresh_token = secrets.get_secret(REFRESH_TOKEN_SECRET_ID)
+        refresh_token = secrets.get_secret(_secret_id_for_email(email))
         config = _client_config()["web"]
         creds = Credentials(
             token=None,
@@ -174,12 +221,12 @@ def get_credentials() -> Credentials:
             scopes=SCOPES,
         )
         creds.refresh(Request())
-        _credentials_cache = creds
+        _credentials_cache[email] = creds
         return creds
 
 
-def _invalidate_credentials_cache() -> None:
-    """再接続（スコープ変更等）でRefresh Tokenが更新された際にキャッシュを破棄する。"""
+def _invalidate_credentials_cache(email: str) -> None:
+    """再接続（スコープ変更等）でRefresh Tokenが更新された際にそのアカウント分のキャッシュを破棄する。"""
     global _credentials_cache
     with _credentials_lock:
-        _credentials_cache = None
+        _credentials_cache.pop(normalize_email(email), None)

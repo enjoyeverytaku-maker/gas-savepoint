@@ -249,14 +249,14 @@ async function loadChanges() {
 }
 
 async function init() {
+  let devEmail = null;
   try {
     const statusRes = await fetch('/api/oauth/status');
     const status = await statusRes.json();
     if (status.dev_mode && status.email) {
       authHeaders = { 'X-Debug-User-Email': status.email };
+      devEmail = status.email;
     }
-    window.__savepointUser = status.email || 'unknown';
-    document.getElementById('accountInfo').textContent = status.email || '';
   } catch (e) {
     // dev_mode判定に失敗しても本番(IAP)では影響ないため無視する
   }
@@ -264,12 +264,24 @@ async function init() {
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
+    window.__savepointUser = me.email || 'unknown';
     if (me.role === 'admin') {
       document.getElementById('auditLogLink').hidden = false;
       document.getElementById('usersLink').hidden = false;
     }
   } catch (e) {
     // 権限判定に失敗した場合はAPI側の403で最終防御される
+  }
+
+  try {
+    const connRes = await apiFetch('/api/oauth/my-connection');
+    const conn = await connRes.json();
+    const connectHref = '/oauth/connect' + (devEmail ? `?debug_email=${encodeURIComponent(devEmail)}` : '');
+    document.getElementById('accountInfo').innerHTML = conn.connected
+      ? escapeHtml(conn.email || '')
+      : `<a href="${connectHref}" style="color:#8fd9b6;">未接続（接続する）</a>`;
+  } catch (e) {
+    document.getElementById('accountInfo').textContent = '';
   }
 
   const selectEl = document.getElementById('projectSelect');

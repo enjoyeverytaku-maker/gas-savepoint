@@ -3,8 +3,11 @@
 SavePointへのログインはIAP経由のGoogle Workspace SSOのため、パスワード発行や
 アカウント作成用の招待リンクは不要——「アクセス権が付与されたので、このURLから
 自分のGoogleアカウントでログインしてください」という通知メールを送るだけで完結する。
-送信にはGASの操作に使っている接続済みGoogleアカウント（auth/oauth.py）にGmail送信
-専用スコープ(gmail.send)を追加して利用する。
+
+2026-09-14: 「システム専用の代表アカウント」という概念は増やさず、招待メールは
+**操作している管理者本人**の接続済みGoogleアカウント（auth/oauth.py、gmail.send
+スコープ込み）から送信する（GAS操作用の接続と同じ仕組みを流用）。そのため、招待メールを
+送るには送信者自身が先に自分のGoogleアカウントを接続している必要がある。
 """
 from __future__ import annotations
 
@@ -13,16 +16,20 @@ from email.mime.text import MIMEText
 
 import requests
 
-from auth.oauth import get_connected_email, get_credentials
+from auth.oauth import get_credentials_for
 
 ROLE_LABELS = {"admin": "管理者", "member": "メンバー"}
 GMAIL_SEND_URL = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
 
 
-def send_invitation_email(to_email: str, role: str, app_base_url: str) -> None:
-    """招待メールを送信する。呼び出し元でベストエフォート運用（失敗してもユーザー登録自体は成功させる）にすること。"""
-    creds = get_credentials()
-    sender = get_connected_email() or ""
+def send_invitation_email(to_email: str, role: str, app_base_url: str, sender_email: str) -> None:
+    """招待メールを送信する。呼び出し元でベストエフォート運用（失敗してもユーザー登録自体は成功させる）にすること。
+
+    sender_emailは送信操作をしている管理者自身のメールアドレス。そのアカウントが未接続の場合は
+    get_credentials_forが例外を送出する（＝ベストエフォート呼び出し元でエラーメッセージとして拾われる）。
+    """
+    creds = get_credentials_for(sender_email)
+    sender = sender_email
     role_label = ROLE_LABELS.get(role, role)
 
     subject = "SavePointへのアクセス権が付与されました"

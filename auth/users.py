@@ -43,12 +43,19 @@ VALID_PROJECT_ROLES = tuple(PROJECT_ROLE_RANK.keys())
 
 
 def get_current_user_email(request: Request) -> str | None:
-    """リクエストから認証済みユーザーのメールアドレスを取得する（未認証ならNone）。"""
+    """リクエストから認証済みユーザーのメールアドレスを取得する（未認証ならNone）。
+
+    SAVEPOINT_DEV_MODE時はヘッダーに加えクエリパラメータ(?debug_email=)も許可する
+    （2026-09-14追記: /oauth/connectのような<a href>直接遷移ではfetch経由でしか付与できない
+    X-Debug-User-Emailヘッダーを送れないため。本番ではSAVEPOINT_DEV_MODE自体が起動時に
+    拒否される=main.py::_refuse_dev_mode_on_cloud_runため、このフォールバックが有効になるのは
+    ローカル開発時のみ）。
+    """
     iap_value = request.headers.get(IAP_HEADER)
     if iap_value:
         return iap_value.split(":", 1)[-1]
     if os.environ.get("SAVEPOINT_DEV_MODE") == "1":
-        debug_value = request.headers.get(DEV_HEADER)
+        debug_value = request.headers.get(DEV_HEADER) or request.query_params.get("debug_email")
         if debug_value:
             return debug_value
     return None

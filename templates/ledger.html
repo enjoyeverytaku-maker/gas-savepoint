@@ -143,23 +143,25 @@
       <div class="card-head-row">
         <div>
           <h2>スタンドアロンGASの自動検出</h2>
-          <div class="card-desc">接続中のGoogleドライブを検索して、まだ台帳に登録されていないGASプロジェクトを探します。スプレッドシートに紐づいたバインドGASは検出できないため、下のフォームから手動で登録してください。</div>
+          <div class="card-desc">自分が接続したGoogleドライブを検索して、まだ台帳に登録されていないGASプロジェクトを探します。スプレッドシートに紐づいたバインドGASは検出できないため、下のフォームから手動で登録してください。</div>
         </div>
         <button type="button" class="primary" id="discoverBtn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" id="discoverIcon"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg>
           検出を実行
         </button>
       </div>
+      <div id="discoveryConnectNotice" class="notice" style="display:none;"></div>
       <div id="discoveryResult" style="margin-top:10px;"></div>
     </div>
 
     <div class="card" id="registerCard" style="display:none;">
       <h2>手動で登録（バインドGAS）</h2>
-      <div class="card-desc">GASエディタの「プロジェクトの設定」でスクリプトIDを確認して貼り付けてください。</div>
-      <div class="form-grid">
+      <div class="card-desc">GASエディタの「プロジェクトの設定」でスクリプトIDを確認して貼り付けてください。登録は、選択したGoogleアカウントに紐づけて行われます（そのアカウントで変更検知・セーブ・ロールバックを行います）。</div>
+      <div id="registerConnectNotice" class="notice" style="display:none;"></div>
+      <div class="form-grid" id="registerFormGrid">
         <div><label>Project Name</label><input id="newProjectName" type="text"></div>
         <div><label>Script ID</label><input id="newScriptId" type="text"></div>
-        <div><label>Google Account</label><input id="newGoogleAccount" type="text" placeholder="省略可"></div>
+        <div><label>Google Account</label><select id="newGoogleAccount"></select></div>
         <div><label>用途（Description）</label><input id="newDescription" type="text"></div>
         <div><label>担当部署</label><input id="newDepartment" type="text"></div>
         <div><label>ステータス</label><input id="newStatus" type="text" placeholder="例: active"></div>
@@ -194,6 +196,17 @@ function showToast(message, isError) {
 
 let authHeaders = {};
 let isAdmin = false;
+let currentUserEmail = '';
+let myConnection = { connected: false, email: null };
+let connectHref = '/oauth/connect';
+const projectRoles = {};
+const PROJECT_ROLE_RANK = { viewer: 0, developer: 1, maintainer: 2, owner: 3 };
+
+function canEditProject(projectId) {
+  if (isAdmin) return true;
+  const role = projectRoles[projectId];
+  return role != null && PROJECT_ROLE_RANK[role] >= PROJECT_ROLE_RANK.owner;
+}
 
 function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({
@@ -237,7 +250,7 @@ async function loadMembersInto(project, listEl) {
     <div class="member-row" data-email="${escapeHtml(m.email)}">
       <span class="email">${escapeHtml(m.email)}</span>
       <select data-role="member-role" disabled>${Object.keys(ROLE_LABELS).map((r) => `<option value="${r}" ${r === m.role ? 'selected' : ''}>${ROLE_LABELS[r]} / ${r}</option>`).join('')}</select>
-      <button type="button" class="danger small" data-role="remove-member" ${isAdmin ? '' : 'disabled'}>削除</button>
+      <button type="button" class="danger small" data-role="remove-member" ${canEditProject(project.id) ? '' : 'disabled'}>削除</button>
     </div>
   `).join('');
 }
@@ -344,7 +357,7 @@ function renderRow(project) {
       <div class="row-actions">
         ${renderReadmeCell(project)}
         ${renderMembersButton()}
-        <button type="button" class="small" data-role="edit" ${isAdmin ? '' : 'disabled title="編集には管理者権限が必要です"'}>編集</button>
+        <button type="button" class="small" data-role="edit" ${canEditProject(project.id) ? '' : 'disabled title="編集にはこのプロジェクトのOwner権限が必要です"'}>編集</button>
       </div>
     </div>
     <div data-role="subpanels"></div>
@@ -407,6 +420,54 @@ function startEdit(row, project) {
   });
 }
 
+function populateGoogleAccountSelect(selectEl, connectedAccounts) {
+  const emails = connectedAccounts.map((a) => a.email);
+  if (myConnection.connected && !emails.includes(myConnection.email)) {
+    emails.unshift(myConnection.email);
+  }
+  if (!emails.length) {
+    selectEl.innerHTML = '<option value="">(接続済みアカウントがありません)</option>';
+    selectEl.disabled = true;
+    return;
+  }
+  selectEl.disabled = false;
+  selectEl.innerHTML = emails.map((email) => `<option value="${escapeHtml(email)}">${escapeHtml(email)}${email === myConnection.email ? '（自分）' : ''}</option>`).join('');
+  if (myConnection.connected) selectEl.value = myConnection.email;
+}
+
+function setupRegisterForm(connectedAccounts) {
+  const noticeEl = document.getElementById('registerConnectNotice');
+  const formGridEl = document.getElementById('registerFormGrid');
+  const registerBtn = document.getElementById('registerBtn');
+  const selectEl = document.getElementById('newGoogleAccount');
+
+  if (!myConnection.connected && !isAdmin) {
+    noticeEl.style.display = 'block';
+    noticeEl.innerHTML = `登録には自分のGoogleアカウントの接続が必要です。<a href="${connectHref}" style="color:var(--accent-dark);font-weight:600;">Googleアカウントを接続する</a>`;
+    formGridEl.style.display = 'none';
+    registerBtn.style.display = 'none';
+    return;
+  }
+  if (!myConnection.connected && isAdmin) {
+    noticeEl.style.display = 'block';
+    noticeEl.innerHTML = `自分のアカウントは未接続です。代理登録する場合は、他の担当者が接続済みのアカウントを選んでください。<a href="${connectHref}" style="color:var(--accent-dark);font-weight:600;">自分も接続する</a>`;
+  }
+  populateGoogleAccountSelect(selectEl, isAdmin ? connectedAccounts : (myConnection.connected ? [{ email: myConnection.email }] : []));
+  if (!isAdmin) selectEl.disabled = true; // memberは自分自身のアカウントのみ（バックエンドでも強制）
+}
+
+function setupDiscoveryCard() {
+  const noticeEl = document.getElementById('discoveryConnectNotice');
+  const discoverBtn = document.getElementById('discoverBtn');
+  if (!myConnection.connected) {
+    noticeEl.style.display = 'block';
+    noticeEl.innerHTML = `検出には自分のGoogleアカウントの接続が必要です。<a href="${connectHref}" style="color:var(--accent-dark);font-weight:600;">Googleアカウントを接続する</a>`;
+    discoverBtn.disabled = true;
+  } else {
+    discoverBtn.disabled = false;
+  }
+}
+
 async function loadLedger() {
   const loadingEl = document.getElementById('loadingText');
   const errorEl = document.getElementById('errorText');
@@ -422,12 +483,13 @@ async function loadLedger() {
   if (status.dev_mode && status.email) {
     authHeaders = { 'X-Debug-User-Email': status.email };
   }
-  document.getElementById('accountInfo').textContent = status.email || '';
+  connectHref = '/oauth/connect' + (status.dev_mode && status.email ? `?debug_email=${encodeURIComponent(status.email)}` : '');
 
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
     isAdmin = me.role === 'admin';
+    currentUserEmail = me.email || '';
   } catch (e) {
     isAdmin = false;
   }
@@ -436,13 +498,33 @@ async function loadLedger() {
     document.getElementById('usersLink').hidden = false;
   }
 
-  if (isAdmin) {
-    registerCardEl.style.display = 'block';
-    discoveryCardEl.style.display = 'block';
-  } else {
-    noticeEl.style.display = 'block';
-    noticeEl.textContent = '登録・編集には管理者権限が必要です。アクセス権を付与されたGASプロジェクトのみ閲覧できます。';
+  try {
+    const connRes = await apiFetch('/api/oauth/my-connection');
+    myConnection = await connRes.json();
+  } catch (e) {
+    myConnection = { connected: false, email: null };
   }
+  document.getElementById('accountInfo').innerHTML = myConnection.connected
+    ? escapeHtml(myConnection.email || '')
+    : `<a href="${connectHref}" style="color:#8fd9b6;">未接続（接続する）</a>`;
+
+  let connectedAccounts = [];
+  if (isAdmin) {
+    try {
+      const accRes = await apiFetch('/api/oauth/accounts');
+      if (accRes.ok) connectedAccounts = await accRes.json();
+    } catch (e) {
+      connectedAccounts = [];
+    }
+  }
+
+  // 登録・検出カードはmember以上なら誰でも見える（2026-09-14、GASごとに担当者が個別登録する
+  // 設計へ変更したため）。実行には自分自身のGoogleアカウント接続が必要（未接続なら案内を出す）。
+  registerCardEl.style.display = 'block';
+  discoveryCardEl.style.display = 'block';
+  noticeEl.style.display = 'none';
+  setupRegisterForm(connectedAccounts);
+  setupDiscoveryCard();
 
   const res = await apiFetch('/api/projects');
   loadingEl.style.display = 'none';
@@ -457,6 +539,18 @@ async function loadLedger() {
   if (!projects.length) {
     emptyEl.style.display = 'block';
     return;
+  }
+
+  if (!isAdmin) {
+    await Promise.all(projects.map(async (project) => {
+      try {
+        const roleRes = await apiFetch(`/api/projects/${project.id}/my-role`);
+        const roleData = await roleRes.json();
+        projectRoles[project.id] = roleData.role || null;
+      } catch (e) {
+        projectRoles[project.id] = null;
+      }
+    }));
   }
 
   tableEl.style.display = 'block';
@@ -478,6 +572,10 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
   };
   if (!payload.project_name || !payload.script_id) {
     showToast('Project NameとScript IDは必須です。', true);
+    return;
+  }
+  if (!payload.google_account) {
+    showToast('Google Accountを選択してください（未接続の場合は先に接続してください）。', true);
     return;
   }
   const res = await apiFetch('/api/projects', {
@@ -537,7 +635,7 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
           const registerRes = await apiFetch('/api/projects', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_name: item.project_name, script_id: item.script_id }),
+            body: JSON.stringify({ project_name: item.project_name, script_id: item.script_id, google_account: myConnection.email }),
           });
           if (!registerRes.ok) {
             const errData = await registerRes.json().catch(() => ({}));

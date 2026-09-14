@@ -759,15 +759,25 @@ async function init() {
   if (status.dev_mode && status.email) {
     authHeaders = { 'X-Debug-User-Email': status.email };
   }
-  document.getElementById('accountInfo').textContent = status.email || '';
-  window.__savepointUser = status.email || 'unknown';
 
   try {
     const meRes = await apiFetch('/api/me');
     const me = await meRes.json();
     currentUserRole = me.role || null;
+    window.__savepointUser = me.email || 'unknown';
   } catch (e) {
     currentUserRole = null;
+  }
+
+  try {
+    const connRes = await apiFetch('/api/oauth/my-connection');
+    const conn = await connRes.json();
+    const connectHref = '/oauth/connect' + (status.dev_mode && status.email ? `?debug_email=${encodeURIComponent(status.email)}` : '');
+    document.getElementById('accountInfo').innerHTML = conn.connected
+      ? escapeHtml(conn.email || '')
+      : `<a href="${connectHref}" style="color:#8fd9b6;">未接続（接続する）</a>`;
+  } catch (e) {
+    document.getElementById('accountInfo').textContent = '';
   }
   if (currentUserRole === 'admin') {
     document.getElementById('auditLogLink').hidden = false;

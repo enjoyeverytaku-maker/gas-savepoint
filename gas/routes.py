@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from auth.oauth import get_credentials
+from auth.oauth import get_credentials_for, is_account_connected
 from auth.users import (
     PROJECT_ROLE_RANK,
     get_current_user_email,
@@ -48,11 +48,15 @@ router = APIRouter(prefix="/api")
 
 
 class ProjectCreate(BaseModel):
-    """プロジェクト作成リクエスト。"""
+    """プロジェクト作成リクエスト。
+
+    google_accountは、このGASの操作（差分取得・セーブ・ロールバック等）に使う接続済み
+    Googleアカウントのメールアドレス（2026-09-14、GASごとに担当者が個別に接続する設計へ変更）。
+    """
 
     project_name: str
     script_id: str
-    google_account: str | None = None
+    google_account: str
     description: str = ""
     status: str = ""
     department: str = ""
@@ -94,12 +98,31 @@ class MemberUpsert(BaseModel):
 
 
 @router.post("/projects")
-def post_project(project: ProjectCreate, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """GASプロジェクトを登録する（管理者限定）。"""
+def post_project(project: ProjectCreate, actor: str = Depends(require_role("member"))) -> dict[str, Any]:
+    """GASプロジェクトを登録する（member以上、GASを作った担当者が自分で登録できる。
+    2026-09-14: パートナーズ版multiuser_oauth.pyを参考に「代表アカウントが一括管理」から
+    「担当者ごとに個別接続・登録」へ変更）。
+
+    google_accountは自分自身の接続済みアカウントのみ指定可能（adminは代理登録のため、
+    他の接続済みアカウントも指定できる）。未接続のアカウントを指定した場合はエラーで拒否する。
+    登録者本人（管理者以外）は、登録と同時にそのプロジェクトのowner権限を自動付与する
+    （デフォルトアクセス権なしのRBACのもとで、自分が登録したGASに自分が触れなくなるのを防ぐ）。
+    """
+    is_admin = get_user_role(actor) == "admin"
+    if project.google_account != actor and not is_admin:
+        raise HTTPException(status_code=403, detail="自分自身が接続したGoogleアカウントのみ指定できます")
+    if not is_account_connected(project.google_account):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{project.google_account} はまだGoogleアカウントが接続されていません。先に画面から『Googleアカウントを接続する』を行ってください。",
+        )
+
     created = create_project(project.model_dump())
+    if not is_admin:
+        upsert_member(created["id"], actor, "owner", updated_by=actor)
     log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")
     try:
-        source_files = fetch_source_files(created["script_id"], get_credentials())
+        source_files = fetch_source_files(created["script_id"], get_credentials_for(created["google_account"]))
         _try_generate_and_save_readme(
             project_id=created["id"],
             project_name=created["project_name"],
@@ -135,14 +158,17 @@ def get_my_project_role(project_id: str, actor: str = Depends(require_role("memb
 
 
 @router.get("/discovery/standalone")
-def get_discovery_standalone(actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
-    """接続済みGoogleアカウントのスタンドアロンGASを自動検出する（F1拡張、Owner限定）。
+def get_discovery_standalone(actor: str = Depends(require_role("member"))) -> dict[str, Any]:
+    """自分自身が接続したGoogleアカウントのスタンドアロンGASを自動検出する（F1拡張）。
 
+    2026-09-14: 誰でも自分の接続済みアカウントで検出できるよう変更（member以上）。
     バインドGAS（スプレッドシート等に紐付くGAS）はこの方法では検出できないため対象外。
     台帳画面からScript IDを手動入力して登録する。
     """
+    if not is_account_connected(actor):
+        return {"ok": False, "error": {"type": "not_connected", "message": "先に画面から『Googleアカウントを接続する』を行ってください。"}}
     try:
-        discovered = discover_standalone_projects(get_credentials())
+        discovered = discover_standalone_projects(get_credentials_for(actor))
     except Exception as exc:  # noqa: BLE001 - Drive API呼び出し失敗もJSONで返す
         return {"ok": False, "error": {"type": "discovery_error", "message": str(exc)}}
 
@@ -154,7 +180,16 @@ def get_discovery_standalone(actor: str = Depends(require_role("admin"))) -> dic
 
 @router.patch("/projects/{project_id}")
 def patch_project(project_id: str, body: ProjectUpdate, actor: str = Depends(require_project_role("owner"))):
-    """台帳項目（用途・担当部署・ステータス等）を更新する（プロジェクトOwner以上、F8）。"""
+    """台帳項目（用途・担当部署・ステータス等）を更新する（プロジェクトOwner以上、F8）。
+
+    google_account（担当者の異動等での付け替え）は、変更後の値が実際に接続済みであることを
+    事前検証する（2026-09-14）。
+    """
+    if body.google_account is not None and not is_account_connected(body.google_account):
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.google_account} はまだGoogleアカウントが接続されていません。先にその担当者に『Googleアカウントを接続する』を行ってもらってください。",
+        )
     updated = update_project(project_id, body.model_dump())
     if updated is None:
         return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"project not found: {project_id}"}})
@@ -179,7 +214,7 @@ def fetch_project_source(project_id: str, actor: str = Depends(require_project_r
         return JSONResponse(status_code=404, content={"error": "project not found"})
 
     try:
-        source_files = fetch_source_files(project["script_id"], get_credentials())
+        source_files = fetch_source_files(project["script_id"], get_credentials_for(project["google_account"]))
     except AppsScriptAPIError as exc:
         return JSONResponse(
             status_code=200,
@@ -238,7 +273,7 @@ def post_sync_check(project_id: str, actor: str = Depends(require_project_role("
         return JSONResponse(status_code=404, content={"error": "project not found"})
 
     try:
-        change = check_project(project_id, project["script_id"], get_credentials())
+        change = check_project(project_id, project["script_id"], get_credentials_for(project["google_account"]))
     except AppsScriptAPIError as exc:
         return JSONResponse(
             status_code=200,

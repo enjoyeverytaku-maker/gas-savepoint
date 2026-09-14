@@ -9,11 +9,16 @@ from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 
 COLLECTION = "gas_projects"
-DEFAULT_GOOGLE_ACCOUNT = "connected_google_account"
 
 
 def create_project(data: dict[str, Any]) -> dict[str, Any]:
-    """GASプロジェクトをFirestoreへ登録する。"""
+    """GASプロジェクトをFirestoreへ登録する。
+
+    google_accountは、そのGASの操作（差分取得・セーブ・ロールバック等）に使う接続済み
+    Googleアカウントのメールアドレス（2026-09-14、パートナーズ版multiuser_oauth.pyを参考に
+    「GASを作った担当者それぞれが自分のアカウントで接続する」設計へ変更。呼び出し元
+    （gas/routes.py::post_project）で、実際に接続済みのアカウントであることを事前検証する）。
+    """
     now_fields = {
         "created_at": SERVER_TIMESTAMP,
         "updated_at": SERVER_TIMESTAMP,
@@ -21,7 +26,7 @@ def create_project(data: dict[str, Any]) -> dict[str, Any]:
     payload = {
         "project_name": data["project_name"],
         "script_id": data["script_id"],
-        "google_account": data.get("google_account") or DEFAULT_GOOGLE_ACCOUNT,
+        "google_account": data["google_account"],
         "description": data.get("description", ""),
         "status": data.get("status", ""),
         "department": data.get("department", ""),
@@ -61,6 +66,8 @@ def get_project(project_id: str) -> dict[str, Any] | None:
 
 
 EDITABLE_FIELDS = ("project_name", "google_account", "description", "status", "department")
+# google_accountの更新（担当者の異動等）は、呼び出し元(gas/routes.py::patch_project)で
+# 新しい値が実際に接続済みのアカウントであることを事前検証してから渡すこと。
 
 
 def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
