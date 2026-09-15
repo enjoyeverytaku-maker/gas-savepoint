@@ -119,16 +119,33 @@ Secret Manager管理の共有シークレットトークンで保護する（Clo
 openssl rand -hex 32 | gcloud secrets create savepoint-scheduler-token --data-file=- --project=$GCP_PROJECT
 ```
 
-デプロイ後、Cloud Schedulerジョブを作成する（spec.md §6: 1日数回程度を想定。TODO要確定）:
+デプロイ後、Cloud Schedulerジョブを作成する。
+
+**実行頻度**: 平日9:00〜18:30の30分おき（`*/30 9-18 * * 1-5` / Asia/Tokyo）。
+2026-09-15に会長指示で確定（spec.md §6の「1日数回程度」から変更）。業務時間内の変更を
+30分以内に検知でき、かつ夜間・休日に無駄な実行をしない設定。
+
+**認証は2層**になる点に注意。Cloud RunがIAPで保護されているため、アプリのトークンだけでは
+IAPに弾かれて到達しない。
+
+1. **IAPを通るため**: OIDCトークン（`--oidc-token-audience` に**IAPのOAuthクライアントID**を指定）。
+   サービスアカウントには `roles/iap.httpsResourceAccessor` が必要。
+2. **アプリ側の認証**: `X-Scheduler-Token` ヘッダ（Secret Managerの `savepoint-scheduler-token` の値）。
 
 ```bash
 gcloud scheduler jobs create http savepoint-sync-check \
-  --project=$GCP_PROJECT --location=<リージョン> \
-  --schedule="0 */4 * * *" \
+  --project=$GCP_PROJECT --location=asia-northeast1 \
+  --schedule="*/30 9-18 * * 1-5" --time-zone="Asia/Tokyo" \
   --uri="https://<Cloud RunのURL>/api/sync/check-all" \
   --http-method=POST \
-  --headers="X-Scheduler-Token=<savepoint-scheduler-tokenの値>"
+  --oidc-service-account-email="<サービスアカウント>" \
+  --oidc-token-audience="<IAPのOAuthクライアントID>" \
+  --headers="X-Scheduler-Token=<savepoint-scheduler-tokenの値>" \
+  --attempt-deadline=540s \
+  --description="登録済み全GASの変更を平日9-18時に30分おきで自動チェック"
 ```
+
+実行結果は `gcloud scheduler jobs describe savepoint-sync-check` の `status` と、Cloud Runのログで確認する。
 
 ## AI機能（F12 README自動生成・セーブ時の影響レビュー、Vertex AI経由のGemini API）
 
