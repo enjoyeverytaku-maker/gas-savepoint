@@ -170,7 +170,10 @@
   .status-badge.loading .dot { background: var(--muted2); }
   .project-card .actions { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 18px 16px; }
   .action-hint { font-size: 11px; color: var(--muted); line-height: 1.6; padding: 0 18px 14px; }
-  button {
+  /* 「セーブ画面へ」は画面遷移のためbuttonではなくaタグだが、見た目は他のボタンと
+     揃える必要がある。以前はa.primaryに色だけ指定していたため、角丸・余白・枠線が
+     当たらず1つだけ四角いボタンになっていた（2026-09-15修正）。 */
+  button, a.primary {
     font-family: inherit; font-size: 13px; font-weight: 600; color: var(--text-strong);
     padding: 8px 13px; border-radius: 8px; border: 1px solid var(--border-strong);
     background: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
@@ -179,7 +182,7 @@
   button:disabled { opacity: .45; cursor: not-allowed; }
   button.primary, a.primary {
     background: var(--accent); color: #fff; border-color: var(--accent);
-    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+    text-decoration: none;
   }
   button.primary:hover, a.primary:hover { background: var(--accent-dark); }
   button.danger { color: var(--error); border-color: var(--error-border2); }
