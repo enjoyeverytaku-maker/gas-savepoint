@@ -110,10 +110,26 @@ def oauth_connect(actor: str = Depends(require_role("member"))):
     return RedirectResponse(oauth.build_auth_url(requested_by=actor))
 
 
+def _authorization_response_url(request: Request) -> str:
+    """OAuthコールバックのURLを、トークン交換に渡せる形で組み立てる。
+
+    Cloud Run上ではTLSがフロントエンドで終端されコンテナへはHTTPで届くため、
+    転送ヘッダーを信頼していないとrequest.urlのスキームがhttpになり、oauthlibが
+    「OAuth 2 MUST utilize https.」で必ず失敗する（2026-09-15、萬年環境で実際に発生）。
+    根本対処はDockerfileの--proxy-headers/--forwarded-allow-ips指定だが、将来その設定が
+    失われても壊れないよう、Cloud Run上（K_SERVICEが必ず設定される）では明示的に
+    httpsへ寄せる。ローカル開発（http://localhost）はこの分岐に入らないため影響しない。
+    """
+    url = request.url
+    if os.environ.get("K_SERVICE") and url.scheme != "https":
+        url = url.replace(scheme="https")
+    return str(url)
+
+
 @app.get("/oauth/callback")
 def oauth_callback(request: Request):
     try:
-        result = oauth.handle_callback(str(request.url))
+        result = oauth.handle_callback(_authorization_response_url(request))
     except Exception as exc:  # noqa: BLE001 - ユーザー向けにエラー内容を返すため意図的に広く捕捉
         return JSONResponse(status_code=400, content={"error": str(exc)})
     return {"connected": True, "email": result["email"]}
