@@ -352,10 +352,14 @@ def _require_release_project_role(request: Request, release_id: str, min_role: s
 
 
 def _try_generate_and_save_readme(project_id: str, project_name: str, source_files: list[dict[str, Any]]) -> None:
-    """README生成と保存をベストエフォートで実行する。"""
+    """README生成と保存をベストエフォートで実行する。
+
+    同じ生成結果から台帳の「用途」の一文も受け取り、未入力の場合のみ自動で埋める
+    （2026-09-15、会長提案）。
+    """
     try:
-        readme_markdown = generate_readme(project_name, source_files)
-        set_readme(project_id, readme_markdown)
+        generated = generate_readme(project_name, source_files)
+        set_readme(project_id, generated["readme"], summary=generated.get("summary", ""))
     except Exception:
         pass
 

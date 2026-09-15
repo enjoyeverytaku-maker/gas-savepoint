@@ -145,14 +145,24 @@ def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, Any] |
     return serialize_project(doc_ref.get())
 
 
-def set_readme(project_id: str, readme_markdown: str) -> None:
-    """AI生成READMEをプロジェクト文書へ保存する。"""
-    db().collection(COLLECTION).document(project_id).update(
-        {
-            "readme_markdown": readme_markdown,
-            "readme_generated_at": SERVER_TIMESTAMP,
-        }
-    )
+def set_readme(project_id: str, readme_markdown: str, summary: str = "") -> None:
+    """AI生成READMEをプロジェクト文書へ保存する。
+
+    summaryを渡した場合、台帳の「用途」(description)が空のときに限り書き込む
+    （2026-09-15、会長提案。利用者が手入力した用途を勝手に上書きしないため、
+    既に値が入っている場合は触らない）。
+    """
+    doc_ref = db().collection(COLLECTION).document(project_id)
+    payload: dict[str, Any] = {
+        "readme_markdown": readme_markdown,
+        "readme_generated_at": SERVER_TIMESTAMP,
+    }
+    if summary:
+        snapshot = doc_ref.get()
+        current = (snapshot.to_dict() or {}).get("description", "") if snapshot.exists else ""
+        if not str(current).strip():
+            payload["description"] = summary
+    doc_ref.update(payload)
 
 
 def serialize_project(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:
