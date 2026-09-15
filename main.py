@@ -240,6 +240,19 @@ def get_users(request: Request, actor: str = Depends(require_role("admin"))) -> 
     return list_users()
 
 
+@app.get("/api/users/directory")
+def get_users_directory(actor: str = Depends(require_role("member"))) -> list[dict[str, Any]]:
+    """GASのメンバー追加時に選ぶための、登録済みユーザーの一覧（メールアドレスとロールのみ）。
+
+    2026-09-15追加。以前は台帳画面のメンバー追加でメールアドレスを手入力させていたが、
+    入力ミスがあっても登録自体は成功してしまい、権限が付いたつもりで付いていないという
+    分かりにくい事故につながる。プロジェクトのメンバー管理はowner以上しか実行できないが、
+    一覧の取得自体は画面表示のためmember以上に許可する（同一組織内の同僚のメールアドレスの
+    みで、更新者や更新日時といった管理情報は返さない）。
+    """
+    return [{"email": user.get("email", ""), "role": user.get("role", "")} for user in list_users()]
+
+
 @app.delete("/api/users/{email}")
 def delete_user_route(email: str, request: Request, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
     """ユーザーを削除する（Owner限定）。"""

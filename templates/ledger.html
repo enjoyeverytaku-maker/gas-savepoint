@@ -235,15 +235,48 @@ function renderMembersButton() {
   return `<button type="button" class="small" data-role="members-toggle">メンバー</button>`;
 }
 
-async function loadMembersInto(project, listEl) {
+// 登録済みユーザー一覧（メンバー追加の選択肢に使う）。台帳画面で一度だけ取得する。
+let userDirectory = null;
+
+async function getUserDirectory() {
+  if (userDirectory !== null) return userDirectory;
+  try {
+    const res = await apiFetch('/api/users/directory');
+    userDirectory = res.ok ? await res.json() : [];
+  } catch (e) {
+    userDirectory = [];
+  }
+  return userDirectory;
+}
+
+/** 追加候補（登録済みユーザーのうち、まだこのGASのメンバーでない人）を選択肢に並べる。 */
+async function fillMemberCandidates(selectEl, currentMembers) {
+  const directory = await getUserDirectory();
+  const already = new Set((currentMembers || []).map((m) => (m.email || '').toLowerCase()));
+  const candidates = directory.filter((u) => !already.has((u.email || '').toLowerCase()));
+  if (!candidates.length) {
+    selectEl.innerHTML = directory.length
+      ? '<option value="">全員が追加済みです</option>'
+      : '<option value="">登録済みユーザーがいません</option>';
+    selectEl.disabled = true;
+    return;
+  }
+  selectEl.disabled = false;
+  selectEl.innerHTML = candidates
+    .map((u) => `<option value="${escapeHtml(u.email)}">${escapeHtml(u.email)}${u.role === 'admin' ? '（管理者）' : ''}</option>`)
+    .join('');
+}
+
+async function loadMembersInto(project, listEl, candidateSelectEl) {
   const res = await apiFetch(`/api/projects/${project.id}/members`);
   if (res.status === 401 || res.status === 403) {
     listEl.innerHTML = '<div class="readme-muted" style="padding:12px 14px;">メンバー閲覧には権限が必要です。</div>';
     return;
   }
   const members = await res.json();
+  if (candidateSelectEl) await fillMemberCandidates(candidateSelectEl, members);
   if (!members.length) {
-    listEl.innerHTML = '<div class="readme-muted" style="padding:12px 14px;">メンバーは未追加です（管理者以外は「追加」で個別付与しない限りこのプロジェクトへアクセスできません）。</div>';
+    listEl.innerHTML = '<div class="readme-muted" style="padding:12px 14px;">メンバーは未追加です。管理者は個別付与なしで操作できますが、メンバーのユーザーはここで追加しない限りこのGASへアクセスできません。<br>候補に出てこない方は、先に「ユーザー管理」で登録してください（登録時に招待メールも送信されます）。</div>';
     return;
   }
   listEl.innerHTML = members.map((m) => `
@@ -271,14 +304,15 @@ function wireMembersPanel(row, project) {
       <div class="readme-muted" style="padding:10px 14px 0;">所有者＝すべて操作可／保守担当＝所有者に近いがメンバー管理は不可／開発者＝編集可／閲覧者＝見るだけ</div>
       <div data-role="members-list" class="readme-muted" style="padding:12px 14px;">読み込み中...</div>
       <div class="add-member">
-        <input type="text" data-role="new-member-email" placeholder="メールアドレス">
+        <select data-role="new-member-email"><option value="">読み込み中...</option></select>
         <select data-role="new-member-role">${ROLE_OPTIONS}</select>
         <button type="button" class="primary small" data-role="add-member">追加</button>
       </div>
     `;
     subpanels.appendChild(panel);
     const listEl = panel.querySelector('[data-role="members-list"]');
-    await loadMembersInto(project, listEl);
+    const emailSelect = panel.querySelector('[data-role="new-member-email"]');
+    await loadMembersInto(project, listEl, emailSelect);
 
     listEl.addEventListener('click', async (event) => {
       const btn = event.target.closest('[data-role="remove-member"]');
@@ -290,16 +324,15 @@ function wireMembersPanel(row, project) {
         showToast('削除に失敗しました。', true);
         return;
       }
-      await loadMembersInto(project, listEl);
+      await loadMembersInto(project, listEl, emailSelect);
     });
 
     const addBtn = panel.querySelector('[data-role="add-member"]');
     addBtn.addEventListener('click', async () => {
-      const emailInput = panel.querySelector('[data-role="new-member-email"]');
       const roleSelect = panel.querySelector('[data-role="new-member-role"]');
-      const email = emailInput.value.trim();
+      const email = emailSelect.value;
       if (!email) {
-        showToast('メールアドレスを入力してください。', true);
+        showToast('追加できるユーザーがいません。先に「ユーザー管理」で登録してください。', true);
         return;
       }
       addBtn.disabled = true;
@@ -314,8 +347,8 @@ function wireMembersPanel(row, project) {
           showToast('追加に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
           return;
         }
-        emailInput.value = '';
-        await loadMembersInto(project, listEl);
+        showToast(`${email} を追加しました。`);
+        await loadMembersInto(project, listEl, emailSelect);
       } finally {
         addBtn.disabled = false;
       }
