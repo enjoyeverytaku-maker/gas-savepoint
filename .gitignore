@@ -5,3 +5,8 @@ __pycache__/
 venv/
 *.egg-info/
 .DS_Store
+
+# テスト実行時の生成物
+.coverage
+.pytest_cache/
+htmlcov/
