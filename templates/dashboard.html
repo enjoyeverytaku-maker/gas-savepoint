@@ -706,7 +706,9 @@ async function loadDashboard() {
   }
 
   const projectsRes = await apiFetch('/api/projects');
-  const projects = await projectsRes.json();
+  // ステータスが「廃止」のGASは管理対象外なのでダッシュボードには出さない（2026-09-15）。
+  // 台帳には残るので、そこで状態の確認や削除ができる。
+  const projects = (await projectsRes.json()).filter((p) => p.status !== 'archived');
 
   loadingEl.style.display = 'none';
 

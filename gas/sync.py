@@ -52,7 +52,9 @@ def check_all_projects() -> dict[str, Any]:
     GASごとに担当者が個別接続する設計へ変更）。get_credentials_for自体がアカウントごとに
     プロセス内キャッシュするため、同じ担当者のプロジェクトが複数あっても再取得は発生しない。
     """
-    projects = list_projects()
+    # ステータスが「廃止(archived)」のGASは管理対象外なのでチェックしない（2026-09-15）。
+    # 廃止済みのGASは削除済み・権限剥奪済みのことが多く、毎回エラーを出し続けてしまうため。
+    projects = [p for p in list_projects() if p.get("status") != "archived"]
     checked = 0
     changed = 0
     errored = 0

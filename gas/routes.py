@@ -20,6 +20,7 @@ from auth.users import (
 from .apps_script import AppsScriptAPIError, fetch_source_files
 from .audit import (
     ACTION_GAS_PROJECT_CREATE,
+    ACTION_GAS_PROJECT_DELETE,
     ACTION_GAS_PROJECT_UPDATE,
     ACTION_SOURCE_FETCH,
     list_operations,
@@ -38,6 +39,7 @@ from .members import (
 from .projects import (
     DuplicateScriptIdError,
     create_project,
+    delete_project,
     get_project,
     list_projects,
     list_projects_for_user,
@@ -227,6 +229,28 @@ def patch_project(project_id: str, body: ProjectUpdate, actor: str = Depends(req
         return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"project not found: {project_id}"}})
     log_operation(action=ACTION_GAS_PROJECT_UPDATE, project_id=project_id, user=actor, result="success")
     return {"ok": True, "project": updated}
+
+
+@router.delete("/projects/{project_id}")
+def delete_project_route(project_id: str, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
+    """GASを台帳から完全に削除する（管理者限定、2026-09-15）。
+
+    GAS自体が廃止された場合や誤登録の場合に使う。セーブポイント・変更履歴・メンバー権限も
+    併せて消えるため、履歴を残したい場合はステータスを「廃止」にする運用を画面側で案内する。
+    監査ログには削除操作自体が残る。
+    """
+    project = get_project(project_id)
+    if project is None:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": f"project not found: {project_id}"}})
+    deleted = delete_project(project_id)
+    log_operation(
+        action=ACTION_GAS_PROJECT_DELETE,
+        project_id=project_id,
+        user=actor,
+        result="success",
+        details={"project_name": project.get("project_name", ""), "script_id": project.get("script_id", ""), **deleted},
+    )
+    return {"ok": True, **deleted}
 
 
 @router.get("/projects/{project_id}")

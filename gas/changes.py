@@ -44,18 +44,57 @@ class ChangeNotFoundError(Exception):
 
 
 def get_baseline(project_id: str) -> tuple[list[dict[str, Any]], str | None]:
-    """変更検知の比較基準（直近のchange、無ければ直近のセーブポイント）を返す。"""
+    """変更検知の比較基準を返す（直近のchangeと直近のセーブポイントのうち、新しい方）。
+
+    2026-09-15修正: 以前はchangeがあれば無条件にそちらを基準にしていた。しかしロールバックで
+    GASを過去の状態へ戻すと、基準は戻す前のままなので「戻した行為」自体が新しい変更として
+    検知され、未セーブの変更として残ってしまっていた（萬年環境で実際に発生）。
+    ロールバック時は復元後の状態をセーブポイントとして記録する（gas/rollback.py）ため、
+    ここで時刻の新しい方を採用すれば、復元直後は正しく「変更なし」と判定される。
+    """
     from .savepoints import get_latest_savepoint
 
     latest_change = _get_latest_change(project_id)
-    if latest_change is not None:
-        return latest_change.get("source_files") or [], latest_change.get("source_hash")
-
     latest_savepoint = get_latest_savepoint(project_id)
-    if latest_savepoint is not None:
-        return latest_savepoint["source_files"], latest_savepoint["source_hash"]
 
-    return [], None
+    candidates = []
+    if latest_change is not None:
+        candidates.append(
+            (latest_change.get("detected_at") or "", latest_change.get("source_files") or [], latest_change.get("source_hash"))
+        )
+    if latest_savepoint is not None:
+        candidates.append(
+            (latest_savepoint.get("created_at") or "", latest_savepoint["source_files"], latest_savepoint["source_hash"])
+        )
+    if not candidates:
+        return [], None
+
+    _, source_files, source_hash = max(candidates, key=lambda item: item[0])
+    return source_files, source_hash
+
+
+def mark_changes_superseded_by_rollback(project_id: str, target_version_no: int) -> int:
+    """未セーブの変更を「復元により取り消された」状態にする（2026-09-15）。
+
+    ロールバックでGASを過去の状態へ戻すと、それまでの未セーブの変更はGAS上に存在しなくなる。
+    未セーブのまま残すと「対応が必要な変更」として画面に出続けてしまうため、状態を切り替える。
+    記録自体は監査のため削除しない。
+    """
+    changes = [c for c in list_changes(project_id) if c.get("release_status") == "unreleased"]
+    if not changes:
+        return 0
+    batch = db().batch()
+    for change in changes:
+        batch.update(
+            db().collection(COLLECTION).document(change["id"]),
+            {
+                "release_status": "rolled_back",
+                "rolled_back_to_version": target_version_no,
+                "rolled_back_at": SERVER_TIMESTAMP,
+            },
+        )
+    batch.commit()
+    return len(changes)
 
 
 def detect_change(project_id: str, source_files: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -137,8 +176,15 @@ def mark_changes_released(change_ids: list[str], release_id: str) -> None:
 
 
 def display_status(change: dict[str, Any]) -> str:
-    """一覧表示用のステータス。"""
-    return "released" if change.get("release_status") == "released" else "unreleased"
+    """一覧表示用のステータス。
+
+    rolled_back（ロールバックにより取り消された変更）は未セーブ扱いにしない。
+    未セーブのままだと「対応が必要な変更」として画面に出続けてしまうため（2026-09-15）。
+    """
+    status = change.get("release_status")
+    if status in ("released", "rolled_back"):
+        return status
+    return "unreleased"
 
 
 def serialize_change(snapshot: firestore.DocumentSnapshot) -> dict[str, Any]:

@@ -422,6 +422,7 @@ function renderRow(project) {
         ${renderReadmeCell(project)}
         ${renderMembersButton()}
         <button type="button" class="small" data-role="edit" ${canEditProject(project.id) ? '' : 'disabled title="編集にはこのプロジェクトのOwner権限が必要です"'}>編集</button>
+        ${isAdmin ? '<button type="button" class="danger small" data-role="delete-project">管理をやめる</button>' : ''}
       </div>
     </div>
     <div data-role="subpanels"></div>
@@ -622,6 +623,7 @@ async function loadLedger() {
     const row = renderRow(project);
     bodyEl.appendChild(row);
     row.querySelector('[data-role="edit"]')?.addEventListener('click', () => startEdit(row, project));
+    row.querySelector('[data-role="delete-project"]')?.addEventListener('click', () => deleteProject(project));
   });
   setupBulkAssign();
 }
@@ -744,6 +746,27 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
 /** 複数GASへまとめて権限を付与する（2026-09-15、会長要望）。
     GASを1件ずつ開いて追加すると、GAS数×人数の操作が必要になるため。
     管理者のみが使える（一括付与はグローバル管理者の操作としてサーバー側でも制限している）。 */
+/** GASを台帳から削除する（管理をやめる、2026-09-15、会長要望）。
+    履歴を残したまま管理対象から外したいだけなら「編集」でステータスを廃止にする方を案内する。 */
+async function deleteProject(project) {
+  const ok = window.confirm(
+    `「${project.project_name}」を台帳から削除します。\n\n` +
+    'セーブポイント・変更履歴・メンバー権限もすべて削除され、元に戻せません。\n' +
+    'GAS本体は削除されません。\n\n' +
+    '※履歴を残したまま管理対象から外したいだけの場合は、キャンセルして「編集」から\n' +
+    '　ステータスを「廃止」に変更してください（自動チェックの対象外になります）。\n\n' +
+    '本当に削除しますか？');
+  if (!ok) return;
+  const res = await apiFetch(`/api/projects/${project.id}`, { method: 'DELETE' });
+  const data = await res.json().catch(() => ({}));
+  if (!data.ok) {
+    showToast('削除に失敗しました: ' + (data.error ? data.error.message : res.statusText), true);
+    return;
+  }
+  showToast(`「${project.project_name}」を台帳から削除しました（セーブポイント${data.savepoints}件・変更履歴${data.changes}件も削除）。`);
+  window.location.reload();
+}
+
 function setupBulkAssign() {
   const bar = document.getElementById('bulkBar');
   const countEl = document.getElementById('bulkCount');

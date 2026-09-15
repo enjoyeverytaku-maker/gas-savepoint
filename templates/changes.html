@@ -78,6 +78,8 @@
   .status-badge { padding: 2px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
   .status-badge.unreleased { background: #fdf3e0; color: #8a6620; }
   .status-badge.released { background: var(--accent-bg); color: var(--accent-dark); }
+  /* ロールバックによって取り消された変更。未セーブ扱いにすると「対応が必要」に見えてしまうため分ける（2026-09-15）。 */
+  .status-badge.rolled_back { background: #eef1f4; color: var(--muted); }
   .change-card .detected { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .change-card .counts { margin-left: auto; font-family: var(--font-mono); font-size: 12.5px; }
   .change-card .file-thead { display: grid; grid-template-columns: 2fr .8fr .6fr .6fr; gap: 12px; padding: 8px 18px; background: #fafbfc; font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; border-top: 1px solid var(--divider); }
@@ -123,6 +125,7 @@
         <button type="button" class="filter active" data-status="all">すべて (<span data-count="all">0</span>)</button>
         <button type="button" class="filter" data-status="unreleased">未セーブ (<span data-count="unreleased">0</span>)</button>
         <button type="button" class="filter" data-status="released">セーブ済み (<span data-count="released">0</span>)</button>
+        <button type="button" class="filter" data-status="rolled_back">復元により取消 (<span data-count="rolled_back">0</span>)</button>
       </div>
       <span class="count-text" id="countText"></span>
     </div>
@@ -136,7 +139,7 @@
 </div>
 
 <script>
-const STATUS_LABELS = { unreleased: '未セーブ', released: 'セーブ済み' };
+const STATUS_LABELS = { unreleased: '未セーブ', released: 'セーブ済み', rolled_back: '復元により取消' };
 
 let authHeaders = {};
 let allChanges = [];

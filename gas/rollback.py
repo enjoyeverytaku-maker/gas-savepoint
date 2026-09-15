@@ -22,6 +22,7 @@ from auth.oauth import get_credentials_for
 
 from .apps_script import AppsScriptAPIError, fetch_source_files, update_content
 from .audit import ACTION_ROLLBACK, log_operation
+from .changes import mark_changes_superseded_by_rollback
 from .diff import calculate_source_hash
 from .projects import get_project
 from .savepoints import create_savepoint, get_savepoint_by_version, list_savepoints
@@ -118,13 +119,36 @@ def rollback_to_version(
         )
         raise
 
+    # 3. 復元後の状態を新しいセーブポイントとして記録する（2026-09-15）。
+    #    これが無いと比較の基準が復元前のままになり、次回の変更検知で「戻した行為」自体が
+    #    新しい変更として検知され、未セーブの変更として残ってしまう（萬年環境で実際に発生）。
+    #    あわせて、復元によってGAS上に存在しなくなった未セーブの変更の状態を切り替える。
+    restored_version_no = backup_version_no
+    try:
+        restored = create_savepoint(
+            project_id=project_id,
+            source_files=target_savepoint["source_files"],
+            comment=f"v{target_version_no}へ復元した状態（自動記録）",
+            created_by=performed_by,
+        )
+        restored_version_no = restored["version_no"]
+    except Exception:  # noqa: BLE001 - 記録に失敗しても復元自体は成功しているため止めない
+        pass
+    try:
+        mark_changes_superseded_by_rollback(project_id, target_version_no)
+    except Exception:  # noqa: BLE001 - 同上
+        pass
+
     log_operation(
         action=ACTION_ROLLBACK,
         project_id=project_id,
         user=performed_by,
         target_version=target_version_no,
         result="success",
-        details={"auto_backup_version_no": backup_version_no},
+        details={
+            "auto_backup_version_no": backup_version_no,
+            "restored_savepoint_version_no": restored_version_no,
+        },
     )
 
     return {

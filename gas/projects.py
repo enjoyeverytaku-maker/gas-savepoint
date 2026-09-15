@@ -145,6 +145,38 @@ def update_project(project_id: str, updates: dict[str, Any]) -> dict[str, Any] |
     return serialize_project(doc_ref.get())
 
 
+def delete_project(project_id: str) -> dict[str, int]:
+    """GASを台帳から完全に削除し、紐づくデータも併せて消す（2026-09-15、会長要望）。
+
+    GASそのものが廃止された、あるいは誤って登録した場合に「管理をやめる」ための操作。
+    セーブポイント・変更履歴・メンバー権限・チェック結果・重複防止の索引をすべて削除する
+    （消し残すと、同じGASを登録し直せなくなったり、存在しないGASの権限が残り続ける）。
+
+    監査ログ(operation_logs)は「いつ誰が何をしたか」の記録なので削除しない。
+    履歴を残したまま管理対象から外したいだけであれば、削除ではなくステータスを
+    「廃止」に変更する運用を案内する（画面側で削除前に確認を出す）。
+    """
+    client = db()
+    project = get_project(project_id)
+    deleted = {"savepoints": 0, "changes": 0, "members": 0}
+
+    for collection, key in (("versions", "savepoints"), ("changes", "changes")):
+        for snapshot in client.collection(collection).where("project_id", "==", project_id).stream():
+            snapshot.reference.delete()
+            deleted[key] += 1
+
+    project_ref = client.collection(COLLECTION).document(project_id)
+    for snapshot in project_ref.collection("members").stream():
+        snapshot.reference.delete()
+        deleted["members"] += 1
+
+    client.collection("sync_status").document(project_id).delete()
+    if project and project.get("script_id"):
+        client.collection(INDEX_COLLECTION).document(_index_id(project["script_id"])).delete()
+    project_ref.delete()
+    return deleted
+
+
 def set_readme(project_id: str, readme_markdown: str, summary: str = "") -> None:
     """AI生成READMEをプロジェクト文書へ保存する。
 
