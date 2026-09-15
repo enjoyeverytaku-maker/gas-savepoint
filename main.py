@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -170,14 +172,44 @@ class UserUpsert(BaseModel):
     role: str
 
 
+# LOGIN記録の間引き用（2026-09-15）。同じ利用者のログインはこの間隔を空けて記録する。
+LOGIN_LOG_INTERVAL_SECONDS = 3600
+_last_login_log: dict[str, float] = {}
+_login_log_lock = threading.Lock()
+
+
+def _should_log_login(email: str) -> bool:
+    """この利用者のLOGINを今記録すべきか（直近に記録済みなら省く）。
+
+    プロセス内の記録なので、インスタンスが増減すると同じ利用者が数回記録されることは
+    あるが、毎アクセス記録されるのに比べれば十分少ない。監査ログの正確性より
+    「操作履歴が埋もれないこと」を優先する割り切り。
+    """
+    now = time.monotonic()
+    with _login_log_lock:
+        last = _last_login_log.get(email)
+        if last is not None and now - last < LOGIN_LOG_INTERVAL_SECONDS:
+            return False
+        _last_login_log[email] = now
+        return True
+
+
 @app.get("/api/me")
 def get_me(request: Request) -> dict[str, Any]:
-    """現在のリクエストの認証状態とロールを返す（画面側のボタン出し分けに使う）。呼び出し自体をLOGINとして記録する。"""
+    """現在のリクエストの認証状態とロールを返す（画面側のボタン出し分けに使う）。
+
+    このAPIは全画面が読み込みのたびに呼ぶため、毎回LOGINを記録すると監査ログが
+    ログイン記録で埋まり、肝心の操作履歴（変更検知・セーブ・復元）が埋もれてしまう
+    （2026-09-15、萬年環境で実際に発生。1画面表示につき2件記録されていた）。
+    利用者ごとに一定時間は記録を省き、「誰がいつシステムを使ったか」の証跡としての
+    役割は保ちつつノイズを減らす。
+    """
     email = get_current_user_email(request)
     if email is None:
         return {"authenticated": False, "email": None, "role": None}
     role = get_user_role(email)
-    log_operation(action=ACTION_LOGIN, user=email, result="success", details={"role": role})
+    if _should_log_login(email):
+        log_operation(action=ACTION_LOGIN, user=email, result="success", details={"role": role})
     return {"authenticated": True, "email": email, "role": role}
 
 
