@@ -28,7 +28,13 @@ from .audit import (
 from .changes import list_changes
 from .diff import calculate_diff, calculate_source_hash
 from .discovery import discover_standalone_projects
-from .members import list_members, remove_member, upsert_member
+from .members import (
+    list_members,
+    list_projects_for_member,
+    remove_member,
+    set_members_bulk,
+    upsert_member,
+)
 from .projects import (
     DuplicateScriptIdError,
     create_project,
@@ -417,6 +423,46 @@ def get_all_changes(actor: str = Depends(require_role("member"))):
         return list_changes()
     accessible_ids = {p["id"] for p in list_projects_for_user(actor, is_admin=False)}
     return [c for c in list_changes() if c.get("project_id") in accessible_ids]
+
+
+class BulkMemberAssignment(BaseModel):
+    """1人の利用者について複数GASの権限をまとめて設定する（2026-09-15、会長要望）。
+
+    assignmentsは {project_id: ロール} 。ロールにnullを指定するとそのGASから外す。
+    「人を起点に各GASの権限を一覧で設定する」画面と、「複数GASへ同じ人をまとめて追加する」
+    画面の両方がこのAPIを使う（後者は全project_idに同じロールを入れるだけ）。
+    """
+
+    email: str
+    assignments: dict[str, str | None]
+
+
+@router.get("/members/by-user/{email}")
+def get_member_projects(email: str, actor: str = Depends(require_role("admin"))) -> list[dict[str, Any]]:
+    """指定利用者から見た、全GASと現在の権限の一覧を返す（管理者限定）。
+
+    「この人が今どのGASを触れるのか」を1画面で把握・変更するために使う。
+    """
+    current = list_projects_for_member(email)
+    return [
+        {
+            "project_id": project["id"],
+            "project_name": project.get("project_name", ""),
+            "description": project.get("description", ""),
+            "role": current.get(project["id"]),
+        }
+        for project in list_projects()
+    ]
+
+
+@router.put("/members/bulk")
+def put_members_bulk(body: BulkMemberAssignment, actor: str = Depends(require_role("admin"))) -> dict[str, Any]:
+    """複数GASの権限をまとめて設定する（管理者限定）。"""
+    try:
+        result = set_members_bulk(body.email, body.assignments, updated_by=actor)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"ok": False, "error": {"type": "invalid_request", "message": str(exc)}})
+    return {"ok": True, **result}
 
 
 @router.get("/projects/{project_id}/members")

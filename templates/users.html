@@ -63,6 +63,16 @@
   .thead-row { display: grid; grid-template-columns: 2fr 1.2fr .6fr; gap: 12px; padding: 10px 18px; background: #fafbfc; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; }
   .user-row { display: grid; grid-template-columns: 2fr 1.2fr .6fr; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--divider); align-items: center; }
   .user-row .email { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted2); word-break: break-all; }
+  /* 人を起点に各GASの権限をまとめて設定するパネル（2026-09-15、会長要望）。
+     GASを1件ずつ開いて1人ずつ追加するとGAS数×人数の操作になり現実的でないため。 */
+  .access-panel { grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 9px; margin-top: 10px; overflow: hidden; }
+  .access-panel .head { padding: 9px 13px; background: #f7f8fa; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text-mid); }
+  .access-panel .hint { padding: 9px 13px 0; font-size: 12px; color: var(--muted); }
+  .access-row { display: grid; grid-template-columns: 1.6fr 2fr 1.1fr; gap: 12px; align-items: center; padding: 9px 13px; border-top: 1px solid var(--divider); }
+  .access-row .pname { font-size: 13px; font-weight: 600; }
+  .access-row .pdesc { font-size: 11.5px; color: var(--muted2); }
+  .access-row select { padding: 6px 9px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 12.5px; background: #fff; }
+  .access-actions { display: flex; gap: 8px; align-items: center; padding: 11px 13px; background: #fbfcfd; border-top: 1px solid var(--divider); }
   select { padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 12.5px; background: #fff; color: var(--text-strong); }
   .add-row { display: flex; align-items: center; gap: 9px; padding: 14px 18px; background: #fbfcfd; flex-wrap: wrap; }
   .add-row input { flex: 1; min-width: 220px; padding: 9px 11px; border: 1px solid var(--border-strong); border-radius: 8px; font-size: 13.5px; }
@@ -179,11 +189,92 @@ function renderUsers(users) {
         ${Object.keys(ROLE_LABELS).map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${ROLE_LABELS[r]}</option>`).join('')}
       </select>
       <span style="text-align:right;display:flex;gap:8px;justify-content:flex-end;">
+        <button type="button" data-role="access-toggle">GASアクセス権</button>
         <button type="button" data-role="invite-user">招待メールを送る</button>
         <button type="button" class="danger" data-role="delete-user" ${u.email === currentUserEmail ? 'disabled title="自分自身は削除できません"' : ''}>削除</button>
       </span>
     </div>
   `).join('');
+}
+
+const PROJECT_ROLE_LABELS = { owner: '所有者', maintainer: '保守担当', developer: '開発者', viewer: '閲覧者' };
+
+/** 「この人が触れるGAS」を一覧で設定するパネル（2026-09-15、会長要望）。 */
+async function openAccessPanel(row, email) {
+  const existing = row.querySelector('.access-panel');
+  if (existing) { existing.remove(); return; }
+
+  const panel = document.createElement('div');
+  panel.className = 'access-panel';
+  panel.innerHTML = '<div class="head">GASアクセス権</div><div class="hint">読み込み中...</div>';
+  row.appendChild(panel);
+
+  const res = await apiFetch(`/api/members/by-user/${encodeURIComponent(email)}`);
+  if (!res.ok) {
+    panel.innerHTML = '<div class="head">GASアクセス権</div><div class="hint">取得に失敗しました。</div>';
+    return;
+  }
+  const rows = await res.json();
+  if (!rows.length) {
+    panel.innerHTML = '<div class="head">GASアクセス権</div><div class="hint">登録済みのGASがありません。</div>';
+    return;
+  }
+
+  const options = ['', ...Object.keys(PROJECT_ROLE_LABELS)];
+  panel.innerHTML = `
+    <div class="head">${escapeHtml(email)} が触れるGAS</div>
+    <div class="hint">まとめて設定して「保存」を押してください。「アクセスなし」にすると、そのGASから外れます。<br>
+      なお管理者は個別付与なしで全GASを操作できるため、ここでの設定は主にメンバーのユーザー向けです。</div>
+    ${rows.map((r) => `
+      <div class="access-row" data-project-id="${escapeHtml(r.project_id)}">
+        <div>
+          <div class="pname">${escapeHtml(r.project_name)}</div>
+          ${r.description ? `<div class="pdesc">${escapeHtml(r.description)}</div>` : ''}
+        </div>
+        <div class="pdesc">${r.role ? PROJECT_ROLE_LABELS[r.role] + 'として付与済み' : '未付与'}</div>
+        <select data-role="access-role">
+          ${options.map((o) => `<option value="${o}" ${o === (r.role || '') ? 'selected' : ''}>${o ? PROJECT_ROLE_LABELS[o] : 'アクセスなし'}</option>`).join('')}
+        </select>
+      </div>`).join('')}
+    <div class="access-actions">
+      <button type="button" class="primary" data-role="access-save">保存</button>
+      <button type="button" data-role="access-all-viewer">すべて閲覧者にする</button>
+      <button type="button" data-role="access-all-none">すべて解除</button>
+    </div>`;
+
+  panel.querySelector('[data-role="access-all-viewer"]').addEventListener('click', () => {
+    panel.querySelectorAll('[data-role="access-role"]').forEach((sel) => { sel.value = 'viewer'; });
+  });
+  panel.querySelector('[data-role="access-all-none"]').addEventListener('click', () => {
+    panel.querySelectorAll('[data-role="access-role"]').forEach((sel) => { sel.value = ''; });
+  });
+
+  const saveBtn = panel.querySelector('[data-role="access-save"]');
+  saveBtn.addEventListener('click', async () => {
+    const assignments = {};
+    panel.querySelectorAll('.access-row').forEach((r) => {
+      assignments[r.dataset.projectId] = r.querySelector('[data-role="access-role"]').value || null;
+    });
+    saveBtn.disabled = true;
+    saveBtn.textContent = '保存中...';
+    try {
+      const saveRes = await apiFetch('/api/members/bulk', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, assignments }),
+      });
+      const data = await saveRes.json();
+      if (!data.ok) {
+        showToast('保存に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+        return;
+      }
+      showToast(`${email} のアクセス権を保存しました（付与${data.assigned}件／解除${data.removed}件）。`);
+      panel.remove();
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = '保存';
+    }
+  });
 }
 
 async function loadUsers() {
@@ -274,6 +365,13 @@ async function init() {
       }
       showToast(`${email} を削除しました。`);
       await loadUsers();
+      return;
+    }
+
+    const accessBtn = event.target.closest('[data-role="access-toggle"]');
+    if (accessBtn) {
+      const row = accessBtn.closest('.user-row');
+      await openAccessPanel(row, row.dataset.email);
       return;
     }
 

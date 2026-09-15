@@ -95,6 +95,13 @@
   .row-main input { width: 100%; padding: 6px 9px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12.5px; }
   .status-tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; background: var(--accent-bg); color: var(--accent-dark); }
   .row-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  /* 複数GASへまとめて権限を付与するための選択UI（2026-09-15、会長要望）。 */
+  .bulk-bar { display: none; align-items: center; gap: 10px; padding: 11px 18px; background: var(--accent-bg);
+    border-bottom: 1px solid var(--accent-border); flex-wrap: wrap; font-size: 13px; }
+  .bulk-bar.open { display: flex; }
+  .bulk-bar .count { font-weight: 700; color: var(--accent-dark); }
+  .bulk-bar select { padding: 6px 9px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 12.5px; background: #fff; }
+  .row-select { margin-right: 8px; }
   .subpanel { margin: 0 18px 14px; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
   .subpanel .subpanel-head { display: flex; align-items: center; gap: 8px; padding: 9px 13px; background: #f7f8fa; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text-mid); }
   .subpanel .subpanel-body { padding: 14px 16px; background: #fff; }
@@ -179,7 +186,16 @@
     <div id="errorText" class="error-message" style="display:none;"></div>
     <div id="emptyText" class="empty" style="display:none;">登録済みのGASプロジェクトがありません。</div>
     <div class="table-wrap" id="ledgerTable" style="display:none;">
-      <div class="thead-row"><span>プロジェクト名</span><span>スクリプトID</span><span>用途</span><span>担当部署</span><span>状態</span><span style="text-align:right;">操作</span></div>
+      <div class="bulk-bar" id="bulkBar">
+        <span class="count" id="bulkCount">0件選択中</span>
+        <span>に</span>
+        <select id="bulkUser"></select>
+        <select id="bulkRole"></select>
+        <span>を付与</span>
+        <button type="button" class="primary small" id="bulkApply">まとめて付与</button>
+        <button type="button" class="small" id="bulkClear">選択を解除</button>
+      </div>
+      <div class="thead-row"><span><input type="checkbox" id="selectAll" class="row-select" title="すべて選択">プロジェクト名</span><span>スクリプトID</span><span>用途</span><span>担当部署</span><span>状態</span><span style="text-align:right;">操作</span></div>
       <div id="ledgerBody"></div>
     </div>
   </main>
@@ -397,7 +413,7 @@ function renderRow(project) {
   row.dataset.projectId = project.id;
   row.innerHTML = `
     <div class="row-main">
-      <div><div class="pname" data-field="project_name">${escapeHtml(project.project_name)}</div></div>
+      <div><div class="pname" data-field="project_name"><input type="checkbox" class="row-select" data-role="row-select" data-project-id="${escapeHtml(project.id)}">${escapeHtml(project.project_name)}</div></div>
       <div>${scriptLink(project.script_id)}<div class="script-id" data-field="google_account">${escapeHtml(project.google_account || '')}</div></div>
       <div data-field="description">${escapeHtml(project.description || '')}</div>
       <div data-field="department">${escapeHtml(project.department || '')}</div>
@@ -607,6 +623,7 @@ async function loadLedger() {
     bodyEl.appendChild(row);
     row.querySelector('[data-role="edit"]')?.addEventListener('click', () => startEdit(row, project));
   });
+  setupBulkAssign();
 }
 
 document.getElementById('registerBtn').addEventListener('click', async () => {
@@ -723,6 +740,83 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
     discoverIcon.classList.remove('spin');
   }
 });
+
+/** 複数GASへまとめて権限を付与する（2026-09-15、会長要望）。
+    GASを1件ずつ開いて追加すると、GAS数×人数の操作が必要になるため。
+    管理者のみが使える（一括付与はグローバル管理者の操作としてサーバー側でも制限している）。 */
+function setupBulkAssign() {
+  const bar = document.getElementById('bulkBar');
+  const countEl = document.getElementById('bulkCount');
+  const userSelect = document.getElementById('bulkUser');
+  const roleSelect = document.getElementById('bulkRole');
+  const selectAll = document.getElementById('selectAll');
+
+  if (!isAdmin) {
+    // 管理者以外には選択機能自体を見せない（押しても403になるため）
+    selectAll.style.display = 'none';
+    document.querySelectorAll('[data-role="row-select"]').forEach((cb) => { cb.style.display = 'none'; });
+    return;
+  }
+
+  roleSelect.innerHTML = ROLE_OPTIONS;
+  getUserDirectory().then((users) => {
+    userSelect.innerHTML = users.length
+      ? users.map((u) => `<option value="${escapeHtml(u.email)}">${escapeHtml(u.email)}</option>`).join('')
+      : '<option value="">登録済みユーザーがいません</option>';
+  });
+
+  const selected = () => Array.from(document.querySelectorAll('[data-role="row-select"]:checked'));
+  const refresh = () => {
+    const n = selected().length;
+    countEl.textContent = `${n}件選択中`;
+    bar.classList.toggle('open', n > 0);
+  };
+
+  document.getElementById('ledgerBody').addEventListener('change', (event) => {
+    if (event.target.matches('[data-role="row-select"]')) refresh();
+  });
+  selectAll.addEventListener('change', () => {
+    document.querySelectorAll('[data-role="row-select"]').forEach((cb) => { cb.checked = selectAll.checked; });
+    refresh();
+  });
+  document.getElementById('bulkClear').addEventListener('click', () => {
+    selectAll.checked = false;
+    document.querySelectorAll('[data-role="row-select"]').forEach((cb) => { cb.checked = false; });
+    refresh();
+  });
+
+  document.getElementById('bulkApply').addEventListener('click', async () => {
+    const email = userSelect.value;
+    const targets = selected();
+    if (!email) {
+      showToast('付与する相手がいません。先に「ユーザー管理」で登録してください。', true);
+      return;
+    }
+    if (!targets.length) return;
+    const btn = document.getElementById('bulkApply');
+    btn.disabled = true;
+    btn.textContent = '付与中...';
+    try {
+      const assignments = {};
+      targets.forEach((cb) => { assignments[cb.dataset.projectId] = roleSelect.value; });
+      const res = await apiFetch('/api/members/bulk', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, assignments }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        showToast('付与に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+        return;
+      }
+      showToast(`${email} に ${data.assigned}件のGASの権限を付与しました。`);
+      document.getElementById('bulkClear').click();
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'まとめて付与';
+    }
+  });
+}
 
 loadLedger().catch((err) => {
   document.getElementById('loadingText').style.display = 'none';

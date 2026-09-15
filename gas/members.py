@@ -56,6 +56,61 @@ def upsert_member(project_id: str, email: str, role: str, updated_by: str) -> di
     return data
 
 
+def set_members_bulk(email: str, assignments: dict[str, str | None], updated_by: str) -> dict[str, int]:
+    """1人の利用者について、複数GASの権限をまとめて設定する（2026-09-15、会長要望）。
+
+    assignments: {project_id: ロール}。ロールにNoneを渡すとそのGASからは外す。
+    GASを1件ずつ開いて1人ずつ追加するのは、GAS数×人数の操作が必要で現実的でないため、
+    「人を起点にまとめて設定」「複数のGASへまとめて追加」の両方からこの関数を使う。
+
+    Firestoreのバッチで一括適用し、途中で失敗して中途半端な権限状態になるのを防ぐ。
+    """
+    email = normalize_email(email)
+    if not email:
+        raise ValueError("email is required")
+    for role in assignments.values():
+        if role is not None and role not in VALID_PROJECT_ROLES:
+            raise ValueError(f"invalid role: {role}")
+
+    client = db()
+    batch = client.batch()
+    added = removed = 0
+    for project_id, role in assignments.items():
+        ref = (
+            client.collection(PROJECTS_COLLECTION)
+            .document(project_id)
+            .collection(MEMBERS_SUBCOLLECTION)
+            .document(email)
+        )
+        if role is None:
+            batch.delete(ref)
+            removed += 1
+        else:
+            batch.set(
+                ref,
+                {"role": role, "updated_by": updated_by, "updated_at": SERVER_TIMESTAMP},
+                merge=True,
+            )
+            added += 1
+    batch.commit()
+    return {"assigned": added, "removed": removed}
+
+
+def list_projects_for_member(email: str) -> dict[str, str]:
+    """指定利用者が個別付与されているGASとそのロールを返す（{project_id: role}）。"""
+    email = normalize_email(email)
+    if not email:
+        return {}
+    result: dict[str, str] = {}
+    for snapshot in db().collection_group(MEMBERS_SUBCOLLECTION).stream():
+        if snapshot.id != email:
+            continue
+        project_ref = snapshot.reference.parent.parent
+        if project_ref is not None:
+            result[project_ref.id] = (snapshot.to_dict() or {}).get("role", "viewer")
+    return result
+
+
 def remove_member(project_id: str, email: str) -> None:
     """プロジェクトからメンバーを削除する（削除後はそのプロジェクトへのアクセス権を失う。
     グローバルadminだけは引き続きowner相当でアクセスできる）。"""
