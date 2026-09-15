@@ -160,16 +160,37 @@ def require_project_role(min_role: str):
 
 
 def upsert_user(email: str, role: str, updated_by: str) -> dict[str, Any]:
-    """ユーザーのグローバルロール（admin/member）を登録・更新する。"""
+    """ユーザーのグローバルロール（admin/member）を登録・更新する。
+
+    ブートストラップ状態（usersが0件＝誰でもadmin扱い）で最初のユーザーを登録する場合、
+    操作者自身がその一覧に含まれていないと、登録した瞬間にブートストラップが終了して
+    操作者が自動的にmemberへ降格し、自分が登録したGASにもアクセスできなくなる
+    （2026-09-15、萬年環境で実際に発生。会長が北浦様を最初の管理者として登録した直後に
+    自分が締め出された）。これを防ぐため、この場合は操作者もadminとして明示的に記録する。
+    """
     if role not in VALID_GLOBAL_ROLES:
         raise ValueError(f"invalid role: {role}")
     email = normalize_email(email)
     if not email:
         raise ValueError("email is required")
+
+    actor = normalize_email(updated_by)
+    preserve_actor_as_admin = bool(actor) and actor != email and _is_bootstrap_state()
+
     db().collection(COLLECTION).document(email).set(
         {"email": email, "role": role, "updated_by": updated_by, "updated_at": SERVER_TIMESTAMP},
         merge=True,
     )
+    if preserve_actor_as_admin:
+        db().collection(COLLECTION).document(actor).set(
+            {
+                "email": actor,
+                "role": "admin",
+                "updated_by": "system（初回登録時に操作者の管理者権限を保持）",
+                "updated_at": SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
     return get_user(email)
 
 

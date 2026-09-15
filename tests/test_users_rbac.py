@@ -18,6 +18,7 @@ from auth.users import (  # noqa: E402
     get_project_role,
     get_user_role,
     normalize_email,
+    upsert_user,
 )
 
 
@@ -120,3 +121,66 @@ class TestGetProjectRole:
         with patch("auth.users.get_user_role", return_value="member"), patch("auth.users.db", return_value=client):
             assert get_project_role("proj1", "Taro@Mannen.JP") == "developer"
         members.document.assert_called_with("taro@mannen.jp")
+
+
+class TestUpsertUserBootstrapGuard:
+    """初回登録時に操作者が締め出されないことを固定する（2026-09-15、萬年環境で実際に発生）。"""
+
+    def _client(self, bootstrap: bool):
+        """ドキュメントIDごとに別々のモックを返すFirestoreクライアント。
+
+        document()が常に同じモックを返すと「どのIDに書いたか」を区別できないため、
+        IDごとに保持する（読み取りのget()と書き込みのset()も分けて数えられる）。
+        """
+        docs: dict[str, MagicMock] = {}
+
+        def document(doc_id: str) -> MagicMock:
+            if doc_id not in docs:
+                doc = MagicMock()
+                snapshot = MagicMock()
+                snapshot.exists = True
+                snapshot.to_dict.return_value = {"role": "admin"}
+                doc.get.return_value = snapshot
+                docs[doc_id] = doc
+            return docs[doc_id]
+
+        collection = MagicMock()
+        collection.document.side_effect = document
+        # _is_bootstrap_state(): usersが0件ならブートストラップ状態
+        collection.limit.return_value.stream.return_value = (
+            iter([]) if bootstrap else iter([MagicMock()])
+        )
+        client = MagicMock()
+        client.collection.return_value = collection
+        client._docs = docs
+        return client
+
+    def _written(self, client) -> dict[str, int]:
+        """実際に書き込み(set)が行われたドキュメントIDと回数を返す。"""
+        return {doc_id: doc.set.call_count for doc_id, doc in client._docs.items() if doc.set.call_count}
+
+    def test_初回登録では操作者もadminとして記録される(self):
+        client = self._client(bootstrap=True)
+        with patch("auth.users.db", return_value=client):
+            upsert_user(email="other@example.com", role="admin", updated_by="me@example.com")
+        written = self._written(client)
+        assert "me@example.com" in written, "操作者が記録されず、登録直後に締め出される"
+        assert "other@example.com" in written
+
+    def test_すでに利用者がいる場合は操作者を勝手に登録しない(self):
+        client = self._client(bootstrap=False)
+        with patch("auth.users.db", return_value=client):
+            upsert_user(email="other@example.com", role="member", updated_by="me@example.com")
+        assert self._written(client) == {"other@example.com": 1}
+
+    def test_自分自身を初回登録する場合は二重書き込みしない(self):
+        client = self._client(bootstrap=True)
+        with patch("auth.users.db", return_value=client):
+            upsert_user(email="me@example.com", role="admin", updated_by="me@example.com")
+        assert self._written(client) == {"me@example.com": 1}
+
+    def test_操作者の判定も大文字小文字を無視する(self):
+        client = self._client(bootstrap=True)
+        with patch("auth.users.db", return_value=client):
+            upsert_user(email="Other@Example.com", role="admin", updated_by="Me@Example.COM")
+        assert set(self._written(client)) == {"other@example.com", "me@example.com"}
