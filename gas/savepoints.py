@@ -28,6 +28,9 @@ PROJECTS_COLLECTION = "gas_projects"
 # 一覧表示・採番で必要な軽量フィールド（source_filesを含めないのが要点）。
 METADATA_FIELDS = ["project_id", "version_no", "source_hash", "comment", "created_by", "created_at"]
 
+# 採番トランザクションの再試行回数（ライブラリ既定は5）。詳細は_next_version_noの注記。
+MAX_VERSION_ALLOCATION_ATTEMPTS = 20
+
 
 def create_savepoint(
     project_id: str,
@@ -113,9 +116,15 @@ def _next_version_no(project_id: str, client: firestore.Client) -> int:
     全セーブポイントを読み出してmax+1していたため、(1)履歴が増えるほど重く、(2)同時に
     2件保存されると同じ番号を二重採番しうる競合があった（ロールバック時の自動バックアップと
     手動セーブが重なる場面が該当）。
+
+    2026-09-15追記: 採番カウンタは1プロジェクトにつき1ドキュメントに集中するため、同時保存が
+    重なるとFirestoreがトランザクションを中断して再試行させる。ライブラリ既定の5回では
+    同時5件で上限に達し、保存そのものが「Failed to commit transaction in 5 attempts」で
+    失敗することをエミュレータでの結合テストで確認したため再試行回数を増やした
+    （1回の再試行は軽量な読み書きのみで、利用者を待たせる時間は短い）。
     """
     project_ref = client.collection(PROJECTS_COLLECTION).document(project_id)
-    transaction = client.transaction()
+    transaction = client.transaction(max_attempts=MAX_VERSION_ALLOCATION_ATTEMPTS)
     return _allocate_version_no(transaction, project_ref, project_id, client)
 
 

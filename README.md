@@ -41,16 +41,42 @@ echo -n "<クライアントシークレット>" | gcloud secrets create savepoi
 
 ## テスト
 
-外部サービス（Firestore・Google API）に接続しない純粋なロジック部分を自動テストで固定している。
-差分計算（`gas/diff.py`）と権限判定（`auth/users.py`）が対象。
-
 ```bash
 pip install -r requirements-dev.txt
 pytest tests/ -q
 ```
 
-Firestore・Apps Script APIを伴う経路（セーブポイント採番・ロールバック・変更検知）は、
-ローカル開発環境（`SAVEPOINT_DEV_MODE=1`）で実際のGCPプロジェクトに対して手動で確認する。
+テストは2種類ある。
+
+**1. 単体テスト**（Javaなしで動く）
+外部サービスに接続せず、協調する関数を差し替えて「呼び出しの順序と条件分岐」を固定する。
+
+| 対象 | 何を守っているか |
+|------|----------------|
+| `tests/test_diff.py` | 差分計算（`gas/diff.py`） |
+| `tests/test_users_rbac.py` | 権限判定（`auth/users.py`）・初回管理者登録での自己ロックアウト防止 |
+| `tests/test_rollback.py` | 競合時に書き込みを止めるか・復元前バックアップ・失敗時の記録（`gas/rollback.py`） |
+| `tests/test_api_permissions.py` | API層の権限チェックと監査ログの実行者詐称防止（`gas/routes.py`） |
+| `tests/test_changes_baseline.py` | 変更検知の比較基準（`gas/changes.py`） |
+
+**2. 結合テスト**（Firestoreエミュレータを使う / `tests/test_firestore_integration.py`）
+登録の一意性・バージョン採番・権限の一括設定・削除の消し残しなど、Firestoreの実挙動に
+依存する部分を検証する。同時実行（登録ボタン連打・同時保存）も含む。
+
+エミュレータはJava製のため、以下が必要。**未導入の環境では結合テストは自動的にスキップされる**
+（単体テストだけが実行される）。
+
+```bash
+brew install openjdk                                      # macOS
+gcloud components install cloud-firestore-emulator beta
+```
+
+Homebrew版OpenJDKはPATHに入らないが、`tests/conftest.py` が既定の場所
+（`/opt/homebrew/opt/openjdk/bin`）を自動で探すため、PATHの設定は不要。
+すでに起動済みのエミュレータを使いたい場合は `FIRESTORE_EMULATOR_HOST` を設定しておく。
+
+Apps Script API・Vertex AIを伴う経路は自動テストの対象外。ローカル開発環境
+（`SAVEPOINT_DEV_MODE=1`）で実際のGCPプロジェクトに対して手動で確認する。
 
 ## 権限管理（RBAC、F6）
 
