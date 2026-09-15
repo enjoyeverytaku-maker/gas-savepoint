@@ -86,6 +86,12 @@
   .row-main .pname { font-size: 13.5px; font-weight: 600; }
   .row-main .ptype { font-size: 11px; color: var(--muted2); margin-top: 2px; }
   .row-main .script-id { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); word-break: break-all; }
+  /* スクリプトIDだけ表示されても利用者は対象のGASへたどり着けないため、
+     エディタを開くリンクを添える（2026-09-15）。IDそのものをリンクにすると
+     長い文字列が折り返して押しにくく、リンクだと気づきにくいため別行にする。 */
+  a.open-gas { display: inline-block; margin-top: 3px; font-size: 11.5px; font-weight: 600;
+    color: var(--accent-dark); text-decoration: none; white-space: nowrap; }
+  a.open-gas:hover { text-decoration: underline; }
   .row-main input { width: 100%; padding: 6px 9px; border: 1px solid var(--accent); border-radius: 6px; font-size: 12.5px; }
   .status-tag { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; background: var(--accent-bg); color: var(--accent-dark); }
   .row-actions { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
@@ -224,6 +230,15 @@ function renderReadmeCell(project) {
     return '<span class="readme-muted">未生成</span>';
   }
   return `<button type="button" class="small" data-role="readme-toggle">README を見る</button>`;
+}
+
+/** GASエディタを開くリンク。スクリプトIDだけ見せても対象のGASへたどり着けないため（2026-09-15）。 */
+function scriptLink(scriptId) {
+  const id = escapeHtml(scriptId || '');
+  if (!id) return '';
+  return `<div class="script-id">${id}</div>
+    <a class="open-gas" href="https://script.google.com/home/projects/${id}/edit"
+       target="_blank" rel="noopener" title="このGASをGoogle Apps Scriptのエディタで開く">GASを開く ↗</a>`;
 }
 
 const ROLE_LABELS = { owner: '所有者', maintainer: '保守担当', developer: '開発者', viewer: '閲覧者' };
@@ -383,7 +398,7 @@ function renderRow(project) {
   row.innerHTML = `
     <div class="row-main">
       <div><div class="pname" data-field="project_name">${escapeHtml(project.project_name)}</div></div>
-      <div><div class="script-id">${escapeHtml(project.script_id)}</div><div class="script-id" data-field="google_account">${escapeHtml(project.google_account || '')}</div></div>
+      <div>${scriptLink(project.script_id)}<div class="script-id" data-field="google_account">${escapeHtml(project.google_account || '')}</div></div>
       <div data-field="description">${escapeHtml(project.description || '')}</div>
       <div data-field="department">${escapeHtml(project.department || '')}</div>
       <div data-field="status"><span class="status-tag">${escapeHtml(statusLabel(project.status))}</span></div>
@@ -408,7 +423,7 @@ function startEdit(row, project) {
   row.innerHTML = `
     <div class="row-main">
       <div><input data-field="project_name" value="${escapeHtml(current.project_name)}"></div>
-      <div><div class="script-id">${escapeHtml(project.script_id)}</div><input data-field="google_account" value="${escapeHtml(current.google_account)}"></div>
+      <div>${scriptLink(project.script_id)}<input data-field="google_account" value="${escapeHtml(current.google_account)}"></div>
       <div><input data-field="description" value="${escapeHtml(current.description)}"></div>
       <div><input data-field="department" value="${escapeHtml(current.department)}"></div>
       <div>
@@ -667,7 +682,7 @@ document.getElementById('discoverBtn').addEventListener('click', async () => {
       row.innerHTML = `
         <div style="flex:1;min-width:0;">
           <div style="font-size:13.5px;font-weight:600;">${escapeHtml(item.project_name)}</div>
-          <div class="script-id">${escapeHtml(item.script_id)}</div>
+          ${scriptLink(item.script_id)}
           ${ownerNote}
         </div>
       `;

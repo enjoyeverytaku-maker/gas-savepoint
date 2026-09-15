@@ -157,6 +157,11 @@
   .project-card .name { font-size: 15.5px; font-weight: 700; }
   .project-card .type-tag { padding: 2px 7px; border-radius: 5px; background: #eef1f4; color: #5b6270; font-size: 10.5px; font-weight: 700; }
   .project-card .script-id { font-size: 11.5px; color: var(--muted2); margin-top: 3px; font-family: var(--font-mono); word-break: break-all; }
+  /* スクリプトIDだけ表示されても利用者は対象のGASへたどり着けないため、
+     エディタを開くリンクを添える（2026-09-15）。 */
+  .project-card a.open-gas { display: inline-block; margin-top: 4px; font-size: 11.5px; font-weight: 600;
+    color: var(--accent-dark); text-decoration: none; white-space: nowrap; }
+  .project-card a.open-gas:hover { text-decoration: underline; }
   .project-card .meta-row { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin-top: 9px; }
   .status-badge { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap; }
   .status-badge .dot { width: 7px; height: 7px; border-radius: 50%; }
@@ -354,6 +359,15 @@ function escapeHtml(str) {
   }[c]));
 }
 
+/** GASエディタを開くリンク。スクリプトIDだけ見せても対象のGASへたどり着けないため（2026-09-15）。 */
+function scriptLink(scriptId) {
+  const id = escapeHtml(scriptId || '');
+  if (!id) return '';
+  return `<div class="script-id">${id}</div>
+    <a class="open-gas" href="https://script.google.com/home/projects/${id}/edit"
+       target="_blank" rel="noopener" title="このGASをGoogle Apps Scriptのエディタで開く">GASを開く ↗</a>`;
+}
+
 function formatDate(iso) {
   if (!iso) return '未保存';
   const d = new Date(iso);
@@ -369,7 +383,7 @@ function renderCard(project) {
     <div class="row1">
       <div>
         <div><span class="name">${escapeHtml(project.project_name)}</span></div>
-        <div class="script-id">${escapeHtml(project.script_id)}</div>
+        ${scriptLink(project.script_id)}
         <div class="meta-row" data-role="meta">最終セーブ：確認中...</div>
       </div>
       <div class="status-badge loading" data-role="status"><span class="dot"></span>確認中...</div>
