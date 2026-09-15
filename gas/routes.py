@@ -29,7 +29,15 @@ from .changes import list_changes
 from .diff import calculate_diff, calculate_source_hash
 from .discovery import discover_standalone_projects
 from .members import list_members, remove_member, upsert_member
-from .projects import create_project, get_project, list_projects, list_projects_for_user, set_readme, update_project
+from .projects import (
+    DuplicateScriptIdError,
+    create_project,
+    get_project,
+    list_projects,
+    list_projects_for_user,
+    set_readme,
+    update_project,
+)
 from .readme_gen import generate_readme
 from .releases import (
     NoChangesToReleaseError,
@@ -124,7 +132,13 @@ def post_project(project: ProjectCreate, actor: str = Depends(require_role("memb
             detail=f"{project.google_account} はまだGoogleアカウントが接続されていません。先に画面から『Googleアカウントを接続する』を行ってください。",
         )
 
-    created = create_project(project.model_dump())
+    try:
+        created = create_project(project.model_dump())
+    except DuplicateScriptIdError:
+        raise HTTPException(
+            status_code=409,
+            detail="このGASは既に台帳へ登録されています（同じスクリプトIDの重複登録はできません）。",
+        )
     if not is_admin:
         upsert_member(created["id"], actor, "owner", updated_by=actor)
     log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")

@@ -578,17 +578,27 @@ document.getElementById('registerBtn').addEventListener('click', async () => {
     showToast('Google Accountを選択してください（未接続の場合は先に接続してください）。', true);
     return;
   }
-  const res = await apiFetch('/api/projects', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    showToast('登録に失敗しました: ' + (data.detail || res.statusText), true);
-    return;
+  // 連打による二重登録を防ぐ（サーバー側でも同じscript_idは拒否するが、
+  // 押した本人に分かるようボタンを無効化する。2026-09-15）
+  const registerBtn = document.getElementById('registerBtn');
+  registerBtn.disabled = true;
+  registerBtn.textContent = '登録中...';
+  try {
+    const res = await apiFetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      showToast('登録に失敗しました: ' + (data.detail || res.statusText), true);
+      return;
+    }
+    window.location.reload();
+  } finally {
+    registerBtn.disabled = false;
+    registerBtn.textContent = '台帳に登録する';
   }
-  window.location.reload();
 });
 
 document.getElementById('discoverBtn').addEventListener('click', async () => {
