@@ -48,7 +48,7 @@ from .releases import (
     regenerate_review,
 )
 from .rollback import RollbackConflictError, RollbackTargetNotFoundError, rollback_to_version
-from .savepoints import get_latest_savepoint, list_savepoints
+from .savepoints import create_savepoint, get_latest_savepoint, list_savepoints
 from .sync import check_all_projects, check_project, get_sync_status, verify_scheduler_token
 
 
@@ -144,6 +144,11 @@ def post_project(project: ProjectCreate, actor: str = Depends(require_role("memb
     log_operation(action=ACTION_GAS_PROJECT_CREATE, project_id=created["id"], user=actor, result="success")
     try:
         source_files = fetch_source_files(created["script_id"], get_credentials_for(created["google_account"]))
+        _try_create_initial_savepoint(
+            project_id=created["id"],
+            source_files=source_files,
+            created_by=actor,
+        )
         _try_generate_and_save_readme(
             project_id=created["id"],
             project_name=created["project_name"],
@@ -351,6 +356,29 @@ def _try_generate_and_save_readme(project_id: str, project_name: str, source_fil
     try:
         readme_markdown = generate_readme(project_name, source_files)
         set_readme(project_id, readme_markdown)
+    except Exception:
+        pass
+
+
+def _try_create_initial_savepoint(
+    project_id: str, source_files: list[dict[str, Any]], created_by: str
+) -> None:
+    """台帳登録時点の状態を最初のセーブポイント(v1)として保存する（2026-09-15、会長提案）。
+
+    これが無いと比較の基準が存在しないため、登録後に最初の変更検知を行った時点で
+    「全ファイルが新規追加された」という実態と異なる巨大な差分が出てしまう。
+    また復元の戻り先が1つも無いため、「管理を始めた時点の状態」へ戻せない。
+    登録時には既にソースを取得済みなので、追加のAPI呼び出しは発生しない。
+
+    READMEと同じくベストエフォート（失敗しても登録自体は成功させる）。
+    """
+    try:
+        create_savepoint(
+            project_id=project_id,
+            source_files=source_files,
+            comment="台帳登録時の初期セーブポイント（自動作成）",
+            created_by=created_by,
+        )
     except Exception:
         pass
 
