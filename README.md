@@ -178,6 +178,102 @@ Cloud Run本番環境では、サービスアカウントに`roles/aiplatform.us
 
 ## デプロイ
 
+### 初回セットアップ（本番環境を新たに構築する場合）
+
+デプロイ自体は1コマンドだが、**IAPを使った本番構成には事前準備が要る**。省略すると
+「ログインできない」「Googleアカウント接続が失敗する」といった、アプリのバグではなく
+環境設定に起因する不具合にぶつかる（実例は`docs/known_issues_and_fixes.md`参照）。
+
+1. 必要APIを有効化する
+
+   ```bash
+   gcloud services enable run.googleapis.com firestore.googleapis.com \
+     secretmanager.googleapis.com iap.googleapis.com aiplatform.googleapis.com \
+     script.googleapis.com drive.googleapis.com cloudscheduler.googleapis.com \
+     --project=$GCP_PROJECT
+   ```
+
+2. Firestoreをネイティブモードで作成する（未作成の場合）
+
+   ```bash
+   gcloud firestore databases create --project=$GCP_PROJECT --location=asia-northeast1
+   ```
+
+3. アプリ用OAuthクライアント（`/oauth/connect`用）と、Secret Managerの各シークレットを
+   「Google OAuth接続の事前準備」節の手順で作成する
+
+4. Secret Managerを読み書きするためのカスタムIAMロールを作成し、Cloud Run実行サービスアカウント
+   （既定は`<プロジェクト番号>-compute@developer.gserviceaccount.com`）へ付与する。
+   マルチユーザーOAuth設計では、担当者が接続するたびに実行時にその人専用のシークレットを
+   作成するため、読み取り(`secretAccessor`)だけでは不足する（`known_issues_and_fixes.md`参照）。
+   以下は必要な操作から再構成したコマンド例。実際に作成済みのロールと差異が無いか
+   `gcloud iam roles describe savepointRuntimeSecrets --project=$GCP_PROJECT` で確認すること。
+
+   ```bash
+   gcloud iam roles create savepointRuntimeSecrets --project=$GCP_PROJECT \
+     --title="SavePoint Runtime Secrets" \
+     --permissions=secretmanager.secrets.create,secretmanager.secrets.get,secretmanager.versions.add,secretmanager.versions.access
+
+   gcloud projects add-iam-policy-binding $GCP_PROJECT \
+     --member="serviceAccount:<Cloud Run実行サービスアカウント>" \
+     --role="projects/$GCP_PROJECT/roles/savepointRuntimeSecrets"
+   ```
+
+5. デプロイする
+
+   ```bash
+   gcloud run deploy savepoint --project=$GCP_PROJECT --region=asia-northeast1 --source .
+   ```
+
+6. Cloud Run本番環境でIAPを有効化し、貴社ドメインのユーザーへアクセスを許可する
+
+   ```bash
+   gcloud beta run services update savepoint --project=$GCP_PROJECT --region=asia-northeast1 --iap
+
+   gcloud iap web add-iam-policy-binding --project=$GCP_PROJECT \
+     --resource-type=cloud-run --service=savepoint --region=asia-northeast1 \
+     --member="domain:<対象のWorkspaceドメイン>" --role="roles/iap.httpsResourceAccessor"
+   ```
+
+7. **利用組織のWorkspace設定によっては、既定のIAP（Google管理OAuthクライアント）で
+   `ServiceNotAllowed`が発生し、ログインそのものができないことがある。** その場合は
+   IAPのOAuthクライアントを自社のカスタムクライアントへ差し替えることで回避できる
+   （情シスへの追加依頼なしで解決した実例が`known_issues_and_fixes.md`にある）。
+
+   ```bash
+   # 事前: 当該OAuthクライアントの承認済みリダイレクトURIに以下を追加
+   #   https://iap.googleapis.com/v1/oauth/clientIds/<CLIENT_ID>:handleRedirect
+   gcloud iap settings set iap-oauth.yaml \
+     --project=$GCP_PROJECT --resource-type=cloud-run \
+     --region=asia-northeast1 --service=savepoint
+   ```
+   ```yaml
+   # iap-oauth.yaml
+   accessSettings:
+     oauthSettings: {clientId: <カスタムOAuthクライアントID>, clientSecret: <シークレット>}
+   ```
+
+   設定の反映には数分〜数時間かかることがある。すぐに切り分けたい場合は、対象アカウントで
+   IAP経由と当該カスタムクライアント単体（`/oauth/connect`相当のフロー）の両方を試し、
+   後者だけ通るかどうかで原因を絞り込む（詳細な手順は`known_issues_and_fixes.md`参照）。
+
+8. Cloud Scheduler（自動検知）を設定する。手順は「自動検知」節を参照
+
+### 更新（2回目以降のデプロイ）
+
 ```bash
-gcloud run deploy savepoint --project=<デプロイ先のGCPプロジェクトID> --source .
+gcloud run deploy savepoint --project=$GCP_PROJECT --region=asia-northeast1 --source .
 ```
+
+問題があれば直前のリビジョンへ即座に戻せる。
+
+```bash
+gcloud run revisions list --service=savepoint --project=$GCP_PROJECT --region=asia-northeast1
+gcloud run services update-traffic savepoint --project=$GCP_PROJECT --region=asia-northeast1 \
+  --to-revisions=<リビジョン名>=100
+```
+
+### 既知の不具合・トラブルシューティング
+
+`docs/known_issues_and_fixes.md` に、開発・本番運用で実際に見つかった不具合と原因・修正を
+まとめている。同じ症状に遭遇したら、まずここを確認する。
