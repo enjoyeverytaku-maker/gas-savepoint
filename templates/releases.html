@@ -93,6 +93,7 @@
   .badge-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; }
   .badge-pill.ok { background: var(--accent-bg); color: var(--accent-dark); }
   .badge-pill.warn { background: var(--warn-bg); color: var(--warn-text); }
+  .badge-pill.err { background: var(--error-bg); color: var(--error-dark); }
   .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 9px; overflow: hidden; margin-top: 16px; }
   .stat-grid .stat { background: #fbfcfd; padding: 13px 15px; }
   .stat-grid .stat .label { font-size: 11.5px; color: var(--muted); font-weight: 600; }
@@ -130,8 +131,8 @@
   .added { color: var(--accent-dark); font-weight: 600; }
   .deleted { color: var(--error); font-weight: 600; }
   .table-wrap { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 1px 2px rgba(16,24,40,.04); overflow: hidden; }
-  .sp-thead { display: grid; grid-template-columns: .7fr 1fr 1.1fr .8fr 2fr .8fr; gap: 12px; padding: 10px 18px; background: #fafbfc; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; }
-  .sp-row { display: grid; grid-template-columns: .7fr 1fr 1.1fr .8fr 2fr .8fr; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--divider); align-items: center; }
+  .sp-thead { display: grid; grid-template-columns: .7fr .9fr 1fr 1.1fr .8fr 1.8fr .8fr; gap: 12px; padding: 10px 18px; background: #fafbfc; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; color: var(--muted2); letter-spacing: .04em; }
+  .sp-row { display: grid; grid-template-columns: .7fr .9fr 1fr 1.1fr .8fr 1.8fr .8fr; gap: 12px; padding: 13px 18px; border-bottom: 1px solid var(--divider); align-items: center; }
   .sp-row:last-child { border-bottom: none; }
   .sp-row .version { font-family: var(--font-mono); font-size: 13.5px; font-weight: 600; color: var(--accent-dark); }
   .sp-row .author { font-size: 13px; }
@@ -231,7 +232,42 @@ function showToast(message, isError) {
   setTimeout(() => el.remove(), 4000);
 }
 
-function showConfirmDialog({ title, body, facts, confirmLabel, onConfirm }) {
+function showConfirmDialog({ title, body, facts, confirmLabel, onConfirm, tone = 'danger' }) {
+  const container = document.getElementById('dialogContainer');
+  const accentColor = tone === 'primary' ? '#1c8f58' : '#c0392b';
+  const iconBg = tone === 'primary' ? 'var(--accent-bg)' : 'var(--error-bg)';
+  const iconPath = tone === 'primary'
+    ? '<path d="M5 12.5l4.5 4.5L19 7.5"></path>'
+    : '<path d="M12 4.5l8.5 15H3.5zM12 10v4M12 17h.01"></path>';
+  container.innerHTML = `
+    <div class="dialog-overlay">
+      <div class="dialog-box">
+        <div class="dialog-body">
+          <div class="row">
+            <div class="icon-danger" style="background:${iconBg};"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="${accentColor}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg></div>
+            <div style="min-width:0;flex:1;">
+              <h3>${escapeHtml(title)}</h3>
+              <div class="dialog-desc">${escapeHtml(body)}</div>
+            </div>
+          </div>
+          ${facts && facts.length ? `<div class="facts">${facts.map((f) => `<div class="fact-row"><span class="k">${escapeHtml(f.k)}</span><span class="v">${escapeHtml(f.v)}</span></div>`).join('')}</div>` : ''}
+        </div>
+        <div class="dialog-footer">
+          <button type="button" id="dialogCancel">やめる</button>
+          <button type="button" id="dialogConfirm" style="background:${accentColor};color:#fff;border-color:${accentColor};">${escapeHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const close = () => { container.innerHTML = ''; };
+  document.getElementById('dialogCancel').addEventListener('click', close);
+  document.getElementById('dialogConfirm').addEventListener('click', async () => {
+    close();
+    await onConfirm();
+  });
+}
+
+function showReasonDialog({ title, body, placeholder, confirmLabel, onConfirm }) {
   const container = document.getElementById('dialogContainer');
   container.innerHTML = `
     <div class="dialog-overlay">
@@ -244,7 +280,9 @@ function showConfirmDialog({ title, body, facts, confirmLabel, onConfirm }) {
               <div class="dialog-desc">${escapeHtml(body)}</div>
             </div>
           </div>
-          ${facts && facts.length ? `<div class="facts">${facts.map((f) => `<div class="fact-row"><span class="k">${escapeHtml(f.k)}</span><span class="v">${escapeHtml(f.v)}</span></div>`).join('')}</div>` : ''}
+          <div style="margin-top:16px;">
+            <textarea id="reasonInput" rows="3" placeholder="${escapeHtml(placeholder || '')}"></textarea>
+          </div>
         </div>
         <div class="dialog-footer">
           <button type="button" id="dialogCancel">やめる</button>
@@ -256,8 +294,9 @@ function showConfirmDialog({ title, body, facts, confirmLabel, onConfirm }) {
   const close = () => { container.innerHTML = ''; };
   document.getElementById('dialogCancel').addEventListener('click', close);
   document.getElementById('dialogConfirm').addEventListener('click', async () => {
+    const reason = document.getElementById('reasonInput').value;
     close();
-    await onConfirm();
+    await onConfirm(reason);
   });
 }
 
@@ -337,6 +376,14 @@ function wireFileToggles(root) {
 }
 
 const RISK_LABELS = { low: '小', medium: '中', high: '大' };
+const STATUS_LABELS = { pending: '承認待ち', approved: '承認済み', rejected: '却下' };
+const STATUS_BADGE_CLASS = { pending: 'warn', approved: 'ok', rejected: 'err' };
+
+function renderStatusBadge(status) {
+  const label = STATUS_LABELS[status] || status;
+  const cls = STATUS_BADGE_CLASS[status] || 'warn';
+  return `<span class="badge-pill ${cls}">${escapeHtml(label)}</span>`;
+}
 
 function renderReviewBox(review, generatedAtOverride) {
   if (!review) return '';
@@ -366,14 +413,17 @@ function renderReviewBox(review, generatedAtOverride) {
   `;
 }
 
-function renderReviewFailedBox(versionNo, releaseId) {
+function renderReviewFailedBox(release) {
+  const savedText = release.status === 'approved'
+    ? `セーブポイント v${release.resulting_version_no} は正しく記録されています。レビューの生成のみ失敗しました。必要であれば後から再生成できます。`
+    : 'この申請自体は正しく記録されています。レビューの生成のみ失敗しました。必要であれば後から再生成できます。';
   return `
     <div class="review-failed-box">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b7791f" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 18px;margin-top:2px;"><path d="M12 4.5l8.5 15H3.5z"></path><path d="M12 10v4"></path><path d="M12 17h.01"></path></svg>
       <div style="min-width:0;flex:1;">
         <div class="title">AI影響レビューは生成できませんでした</div>
-        <div class="body">セーブポイント v${versionNo} は正しく記録されています。レビューの生成のみ失敗しました。必要であれば後から再生成できます。</div>
-        <button type="button" style="margin-top:10px;font-size:12.5px;" data-role="retry-review" data-release-id="${releaseId}">レビューを再生成する</button>
+        <div class="body">${savedText}</div>
+        <button type="button" style="margin-top:10px;font-size:12.5px;" data-role="retry-review" data-release-id="${release.id}">レビューを再生成する</button>
       </div>
     </div>
   `;
@@ -530,8 +580,8 @@ async function renderNewReleaseView(root, projectId) {
   const allFiles = unreleased.flatMap((c) => c.diff || []);
 
   changesCard.innerHTML = `
-    <h2>今の状態をセーブする</h2>
-    <div class="meta-line" style="font-size:12.5px;color:var(--muted);">検知された未セーブの変更を、新しいセーブポイントとして記録します。GAS側のコードは書き換わりません。</div>
+    <h2>今の状態をセーブ申請する</h2>
+    <div class="meta-line" style="font-size:12.5px;color:var(--muted);">検知された未セーブの変更を、セーブポイントとして申請します。GAS側のコードは書き換わりません。</div>
     <div class="stat-grid">
       <div class="stat"><div class="label">未セーブの変更</div><div class="value-row"><span class="value">${unreleased.length}</span><span class="unit">件</span></div></div>
       <div class="stat"><div class="label">追加行数</div><div class="value-row"><span class="value added">+${totalAdded}</span></div></div>
@@ -544,14 +594,14 @@ async function renderNewReleaseView(root, projectId) {
     </div>
     <div class="ai-note">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#59637a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 17px;margin-top:2px;"><path d="M12 4l1.8 4.2L18 10l-4.2 1.8L12 16l-1.8-4.2L6 10l4.2-1.8z"></path><path d="M18 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"></path></svg>
-      <div>セーブすると、前回のセーブポイントからの変更内容についてAIが影響レビューを自動生成します。レビューは<strong>参考情報</strong>で、セーブを止めたり承認したりするものではありません。</div>
+      <div>申請すると、前回のセーブポイントからの変更内容についてAIが影響レビューを自動生成します。レビューは<strong>参考情報</strong>です。実際にセーブポイントとして記録されるのは、Maintainer以上が内容を確認して承認した時点です。</div>
     </div>
     <div class="actions-row">
       <button type="button" class="primary" id="submitReleaseBtn" ${canEdit() ? '' : 'disabled'}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"></path><path d="M9 4v6h6"></path></svg>
-        セーブする
+        セーブを申請する
       </button>
-      <span class="note" id="submitNote">${canEdit() ? '' : 'セーブにはDeveloper以上の権限が必要です'}</span>
+      <span class="note" id="submitNote">${canEdit() ? '' : '申請にはDeveloper以上の権限が必要です'}</span>
     </div>
   `;
 
@@ -598,10 +648,11 @@ async function renderListView(root, projectId) {
       ${renderTabbar(projectId, 'list')}
     </div>
     <div class="table-wrap">
-      <div class="sp-thead"><span>バージョン</span><span>作成者</span><span>作成日時</span><span>変更件数</span><span>コメント</span><span></span></div>
-      ${!releases.length ? '<div class="empty">このプロジェクトにはまだセーブポイントがありません。</div>' : releases.map((r) => `
+      <div class="sp-thead"><span>バージョン</span><span>状態</span><span>申請者</span><span>作成日時</span><span>変更件数</span><span>コメント</span><span></span></div>
+      ${!releases.length ? '<div class="empty">このプロジェクトにはまだセーブ申請がありません。</div>' : releases.map((r) => `
         <div class="sp-row" data-release-id="${r.id}">
-          <span class="version">v${r.resulting_version_no}</span>
+          <span class="version">${r.status === 'approved' ? `v${r.resulting_version_no}` : '-'}</span>
+          <span>${renderStatusBadge(r.status)}</span>
           <span class="author">${escapeHtml(r.requested_by)}</span>
           <span class="created">${formatDate(r.created_at)}</span>
           <span class="changes">${r.change_count}件</span>
@@ -638,6 +689,24 @@ async function renderDetailView(root, releaseId) {
   const includedChanges = allChanges.filter((c) => (release.change_ids || []).includes(c.id));
   const allFiles = includedChanges.flatMap((c) => c.diff || []);
 
+  const versionLabel = release.status === 'approved' ? `v${release.resulting_version_no}` : STATUS_LABELS[release.status] || release.status;
+  const actionBtnHtml = release.status === 'pending'
+    ? `
+      <button type="button" class="primary" id="approveBtn" ${canApprove() ? '' : 'disabled title="承認にはMaintainer以上の権限が必要です"'}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>
+        承認する
+      </button>
+      <button type="button" class="danger" id="rejectBtn" ${canApprove() ? '' : 'disabled'}>却下する</button>
+    `
+    : release.status === 'approved'
+      ? `
+      <button type="button" class="danger" id="rollbackBtn" ${canEdit() ? '' : 'disabled title="復元にはDeveloper以上の権限が必要です"'}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 13a8 8 0 1 0 2.3-5.7"></path><path d="M4 6.5V13h6"></path></svg>
+        このセーブポイントに復元
+      </button>
+    `
+      : '';
+
   root.innerHTML = `
     <div class="eyebrow">Savepoints</div>
     <h1 class="page-title">セーブ管理</h1>
@@ -645,22 +714,28 @@ async function renderDetailView(root, releaseId) {
 
     <div class="card">
       <div class="breadcrumb-row" style="margin-bottom:0;">
-        <span class="version" style="font-family:var(--font-mono);font-size:21px;font-weight:700;color:var(--accent-dark);">v${release.resulting_version_no}</span>
+        <span class="version" style="font-family:var(--font-mono);font-size:21px;font-weight:700;color:var(--accent-dark);">${versionLabel}</span>
+        ${renderStatusBadge(release.status)}
         <span class="pname">${escapeHtml(project.project_name)}</span>
         <div style="flex:1;"></div>
-        <button type="button" class="danger" id="rollbackBtn" ${canEdit() ? '' : 'disabled title="復元にはDeveloper以上の権限が必要です"'}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 13a8 8 0 1 0 2.3-5.7"></path><path d="M4 6.5V13h6"></path></svg>
-          このセーブポイントに復元
-        </button>
+        ${actionBtnHtml}
       </div>
-      <div class="meta-line" style="font-size:12.5px;color:var(--muted);margin-top:8px;">${escapeHtml(release.requested_by)} が ${formatDate(release.created_at)} にセーブ・${release.change_count}件の変更</div>
+      <div class="meta-line" style="font-size:12.5px;color:var(--muted);margin-top:8px;">${escapeHtml(release.requested_by)} が ${formatDate(release.created_at)} に申請・${release.change_count}件の変更</div>
       ${release.comment ? `<div style="margin-top:15px;padding:12px 14px;background:#f7f8fa;border:1px solid var(--divider);border-radius:8px;"><div style="font-size:11.5px;font-weight:700;color:var(--muted2);margin-bottom:4px;">セーブコメント</div><div style="font-size:13.5px;color:var(--text-body);line-height:1.75;">${escapeHtml(release.comment)}</div></div>` : ''}
+      ${release.status === 'approved' ? `<div style="margin-top:10px;font-size:12px;color:var(--muted);">承認: ${escapeHtml(release.approved_by || '')}（${formatDate(release.approved_at)}）</div>` : ''}
+      ${release.status === 'rejected' ? `
+        <div style="margin-top:15px;padding:12px 14px;background:var(--error-bg);border:1px solid var(--error-border2);border-radius:8px;">
+          <div style="font-size:11.5px;font-weight:700;color:var(--error-dark);margin-bottom:4px;">却下理由（${escapeHtml(release.rejected_by || '')} / ${formatDate(release.rejected_at)}）</div>
+          <div style="font-size:13.5px;color:var(--text-body);line-height:1.75;">${escapeHtml(release.rejection_reason || '（理由の記載なし）')}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px;">この申請に含まれていた変更は未セーブのまま残っています。修正のうえ再度申請できます。</div>
+        </div>
+      ` : ''}
     </div>
 
-    <div id="reviewSlot">${release.ai_review ? renderReviewBox(release.ai_review, release.created_at) : renderReviewFailedBox(release.resulting_version_no, release.id)}</div>
+    <div id="reviewSlot">${release.ai_review ? renderReviewBox(release.ai_review, release.created_at) : renderReviewFailedBox(release)}</div>
 
     <div class="table-wrap" style="margin-top:14px;">
-      <div style="padding:11px 18px;background:#fafbfc;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--text-mid);">このセーブポイントに含まれる変更</div>
+      <div style="padding:11px 18px;background:#fafbfc;border-bottom:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--text-mid);">この申請に含まれる変更</div>
       <div style="padding:14px 18px;">${renderFileCards(allFiles, true)}</div>
     </div>
   `;
@@ -669,12 +744,12 @@ async function renderDetailView(root, releaseId) {
   function handleReviewUpdated(updatedRelease) {
     document.getElementById('reviewSlot').innerHTML = updatedRelease.ai_review
       ? renderReviewBox(updatedRelease.ai_review, updatedRelease.created_at)
-      : renderReviewFailedBox(updatedRelease.resulting_version_no, updatedRelease.id);
+      : renderReviewFailedBox(updatedRelease);
     wireRetryReview(root, handleReviewUpdated);
   }
   wireRetryReview(root, handleReviewUpdated);
 
-  document.getElementById('rollbackBtn').addEventListener('click', () => {
+  document.getElementById('rollbackBtn')?.addEventListener('click', () => {
     showConfirmDialog({
       title: `v${release.resulting_version_no} の状態に復元しますか？`,
       body: 'GAS側のコードがこのバージョンの内容に上書きされます。現在のコードは復元前セーブポイントとして自動保存されるため、やり直しは可能です。',
@@ -706,6 +781,53 @@ async function renderDetailView(root, releaseId) {
       },
     });
   });
+
+  document.getElementById('approveBtn')?.addEventListener('click', () => {
+    showConfirmDialog({
+      title: 'このセーブ申請を承認しますか？',
+      body: '承認すると、申請時点の内容で新しいセーブポイントが作成されます。この操作は取り消せません（作成後は通常のセーブポイントとして復元対象になります）。',
+      facts: [
+        { k: 'プロジェクト', v: project.project_name },
+        { k: '申請者', v: release.requested_by },
+        { k: '変更件数', v: `${release.change_count}件` },
+      ],
+      confirmLabel: '承認する',
+      tone: 'primary',
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/releases/${release.id}/approve`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) {
+          showToast('承認に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+          return;
+        }
+        showToast(`承認しました（v${data.release.resulting_version_no}として記録）。`);
+        await renderDetailView(root, release.id);
+      },
+    });
+  });
+
+  document.getElementById('rejectBtn')?.addEventListener('click', () => {
+    showReasonDialog({
+      title: 'このセーブ申請を却下しますか？',
+      body: '却下すると、この申請の変更は未セーブのまま残ります。申請者は修正のうえ再度申請できます。',
+      placeholder: '却下理由（任意）',
+      confirmLabel: '却下する',
+      onConfirm: async (reason) => {
+        const res = await apiFetch(`/api/releases/${release.id}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reason || '' }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          showToast('却下に失敗しました: ' + (data.error ? data.error.message : '不明なエラー'), true);
+          return;
+        }
+        showToast('却下しました。');
+        await renderDetailView(root, release.id);
+      },
+    });
+  });
 }
 
 // 5. セーブ完了画面
@@ -717,32 +839,37 @@ async function renderSummaryView(root, releaseId) {
   }
   const release = await res.json();
   const project = projectsCache.find((p) => p.id === release.project_id) || (await (await apiFetch(`/api/projects/${release.project_id}`)).json());
+  const isPending = release.status === 'pending';
 
   root.innerHTML = `
     <div class="eyebrow">Savepoints</div>
     <h1 class="page-title">セーブ管理</h1>
     <div style="height:16px;"></div>
-    <div class="card" style="border-top:3px solid var(--accent);">
+    <div class="card" style="border-top:3px solid ${isPending ? 'var(--warn)' : 'var(--accent)'};">
       <div class="head-row" style="display:flex;gap:14px;align-items:flex-start;">
-        <span class="icon-ok"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#1c8f58" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+        <span class="icon-ok" style="${isPending ? 'background:var(--warn-bg);' : ''}">${isPending
+          ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#b7791f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>'
+          : '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#1c8f58" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>'}</span>
         <div style="min-width:0;flex:1;">
-          <h2>セーブが完了しました</h2>
-          <div class="sub">${escapeHtml(project.project_name)} の現在のコードを <span style="font-family:var(--font-mono);font-weight:700;color:var(--accent-dark);">v${release.resulting_version_no}</span> として記録しました。この時点にはいつでも復元できます。</div>
+          <h2>${isPending ? 'セーブを申請しました' : 'セーブが完了しました'}</h2>
+          <div class="sub">${isPending
+            ? `${escapeHtml(project.project_name)} への変更をセーブ申請として記録しました。Maintainer以上が承認すると、セーブポイントとして確定します。`
+            : `${escapeHtml(project.project_name)} の現在のコードを <span style="font-family:var(--font-mono);font-weight:700;color:var(--accent-dark);">v${release.resulting_version_no}</span> として記録しました。この時点にはいつでも復元できます。`}</div>
         </div>
       </div>
       <div class="stat-grid">
-        <div class="stat"><div class="label">バージョン</div><div class="value-row"><span class="value" style="font-size:16px;">v${release.resulting_version_no}</span></div></div>
+        <div class="stat"><div class="label">状態</div><div class="value-row">${renderStatusBadge(release.status)}</div></div>
         <div class="stat"><div class="label">変更件数</div><div class="value-row"><span class="value" style="font-size:16px;">${release.change_count}件</span></div></div>
-        <div class="stat"><div class="label">作成者</div><div class="value-row"><span class="value" style="font-size:13px;">${escapeHtml(release.requested_by)}</span></div></div>
-        <div class="stat"><div class="label">作成日時</div><div class="value-row"><span class="value" style="font-size:12.5px;">${formatDate(release.created_at)}</span></div></div>
+        <div class="stat"><div class="label">申請者</div><div class="value-row"><span class="value" style="font-size:13px;">${escapeHtml(release.requested_by)}</span></div></div>
+        <div class="stat"><div class="label">申請日時</div><div class="value-row"><span class="value" style="font-size:12.5px;">${formatDate(release.created_at)}</span></div></div>
       </div>
       <div class="actions-row">
-        <button type="button" data-role="go-detail">セーブポイントの詳細を見る</button>
+        <button type="button" data-role="go-detail">${isPending ? '申請の詳細を見る' : 'セーブポイントの詳細を見る'}</button>
         <button type="button" data-role="go-list">セーブポイント一覧へ</button>
         <button type="button" data-role="go-dash">ダッシュボードへ</button>
       </div>
     </div>
-    ${release.ai_review ? renderReviewBox(release.ai_review, release.created_at) : renderReviewFailedBox(release.resulting_version_no, release.id)}
+    ${release.ai_review ? renderReviewBox(release.ai_review, release.created_at) : renderReviewFailedBox(release)}
   `;
   root.querySelector('[data-role="go-detail"]').addEventListener('click', () => navigate(`detail/${releaseId}`));
   root.querySelector('[data-role="go-list"]').addEventListener('click', () => navigate(`list/${release.project_id}`));
@@ -752,6 +879,10 @@ async function renderSummaryView(root, releaseId) {
 
 function canEdit() {
   return PROJECT_ROLE_RANK[currentProjectRole] >= PROJECT_ROLE_RANK.developer;
+}
+
+function canApprove() {
+  return PROJECT_ROLE_RANK[currentProjectRole] >= PROJECT_ROLE_RANK.maintainer;
 }
 
 async function init() {

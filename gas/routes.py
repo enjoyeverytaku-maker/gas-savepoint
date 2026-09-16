@@ -50,10 +50,13 @@ from .readme_gen import generate_readme
 from .releases import (
     NoChangesToReleaseError,
     ReleaseNotFoundError,
-    create_release,
+    ReleaseNotPendingError,
+    approve_release,
     get_release,
     list_releases,
     regenerate_review,
+    reject_release,
+    request_release,
 )
 from .rollback import RollbackConflictError, RollbackTargetNotFoundError, rollback_to_version
 from .savepoints import create_savepoint, get_latest_savepoint, list_savepoints
@@ -105,12 +108,18 @@ class RollbackRequest(BaseModel):
 
 
 class ReleaseCreate(BaseModel):
-    """セーブポイント作成リクエスト。
+    """セーブ申請リクエスト。
 
     申請者はRollbackRequestと同じ理由でクライアントから受け取らず、認証済みactorを使う。
     """
 
     comment: str = ""
+
+
+class ReleaseReject(BaseModel):
+    """セーブ申請の却下リクエスト。"""
+
+    reason: str = ""
 
 
 class MemberUpsert(BaseModel):
@@ -514,13 +523,14 @@ def delete_project_member(project_id: str, email: str, actor: str = Depends(requ
 
 @router.post("/projects/{project_id}/releases")
 def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(require_project_role("developer"))):
-    """未セーブの変更をまとめてセーブポイントとして記録する（プロジェクトDeveloper以上）。
+    """未セーブの変更をまとめてセーブ申請する（プロジェクトDeveloper以上）。
 
-    人間による承認ゲートは無く、代わりに前回セーブポイントからの累積差分を
-    AIがレビューし参考情報として記録に添付する（gas/releases.py参照）。
+    この時点ではまだセーブポイントは作られない。前回セーブポイントからの累積差分を
+    AIがレビューし、参考情報として申請に添付する。実際にセーブポイントが作られるのは
+    Maintainer以上が承認した時点（post_approve_release、gas/releases.py参照）。
     """
     try:
-        result = create_release(
+        result = request_release(
             project_id=project_id,
             requested_by=actor,
             comment=body.comment,
@@ -551,6 +561,32 @@ def post_release(project_id: str, body: ReleaseCreate, actor: str = Depends(requ
             content={"ok": False, "error": {"type": "authentication_or_request_error", "message": str(exc)}},
         )
     return {"ok": True, "release": result["release"]}
+
+
+@router.post("/releases/{release_id}/approve")
+def post_approve_release(release_id: str, request: Request):
+    """セーブ申請を承認し、実際にセーブポイントを作成する（対象プロジェクトMaintainer以上）。"""
+    actor = _require_release_project_role(request, release_id, "maintainer")
+    try:
+        result = approve_release(release_id, approved_by=actor)
+    except ReleaseNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
+    except ReleaseNotPendingError as exc:
+        return JSONResponse(status_code=409, content={"ok": False, "error": {"type": "not_pending", "message": str(exc)}})
+    return {"ok": True, "release": result["release"]}
+
+
+@router.post("/releases/{release_id}/reject")
+def post_reject_release(release_id: str, body: ReleaseReject, request: Request):
+    """セーブ申請を却下する（対象プロジェクトMaintainer以上）。セーブポイントは作られない。"""
+    actor = _require_release_project_role(request, release_id, "maintainer")
+    try:
+        release = reject_release(release_id, rejected_by=actor, reason=body.reason)
+    except ReleaseNotFoundError as exc:
+        return JSONResponse(status_code=404, content={"ok": False, "error": {"type": "not_found", "message": str(exc)}})
+    except ReleaseNotPendingError as exc:
+        return JSONResponse(status_code=409, content={"ok": False, "error": {"type": "not_pending", "message": str(exc)}})
+    return {"ok": True, "release": release}
 
 
 @router.get("/projects/{project_id}/releases")

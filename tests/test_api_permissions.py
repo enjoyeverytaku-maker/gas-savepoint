@@ -181,9 +181,9 @@ class TestAuditIdentity:
 
         def fake_release(**kwargs):
             captured.update(kwargs)
-            return {"release": {}, "savepoint": {}}
+            return {"release": {}}
 
-        monkeypatch.setattr(routes, "create_release", fake_release)
+        monkeypatch.setattr(routes, "request_release", fake_release)
         client.post(
             "/api/projects/proj-1/releases",
             json={"comment": "test", "requested_by": "別人@example.com"},
