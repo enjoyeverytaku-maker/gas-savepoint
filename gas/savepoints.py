@@ -29,7 +29,7 @@ PROJECTS_COLLECTION = "gas_projects"
 METADATA_FIELDS = ["project_id", "version_no", "source_hash", "comment", "created_by", "created_at"]
 
 # 採番トランザクションの再試行回数（ライブラリ既定は5）。詳細は_next_version_noの注記。
-MAX_VERSION_ALLOCATION_ATTEMPTS = 20
+MAX_VERSION_ALLOCATION_ATTEMPTS = 40
 
 
 def create_savepoint(
